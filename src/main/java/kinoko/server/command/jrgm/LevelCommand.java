@@ -28,7 +28,7 @@ public final class LevelCommand {
             CharacterStat cs = user.getCharacterStat();
             cs.setLevel((short) level);
             user.validateStat();
-            user.write(WvsContext.statChanged(Stat.LEVEL, (byte) cs.getLevel(), true));
+            user.write(WvsContext.statChanged(Stat.LEVEL, cs.getLevel(), true));
             user.getConnectedServer().notifyUserUpdate(user);
         } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
             user.systemMessage("Usage: !level <new level>");

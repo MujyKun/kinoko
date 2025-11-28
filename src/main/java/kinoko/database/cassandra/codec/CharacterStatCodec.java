@@ -77,7 +77,7 @@ public final class CharacterStatCodec extends MappingCodec<UdtValue, CharacterSt
                 .setInt(CharacterStatUDT.MAX_MP, cs.getMaxMp())
                 .setShort(CharacterStatUDT.AP, cs.getAp())
                 .setMap(CharacterStatUDT.SP, cs.getSp().getMap(), Integer.class, Integer.class)
-                .setInt(CharacterStatUDT.EXP, cs.getExp())
+                .setInt(CharacterStatUDT.EXP, (int) cs.getExp())
                 .setShort(CharacterStatUDT.POP, cs.getPop())
                 .setInt(CharacterStatUDT.POS_MAP, cs.getPosMap())
                 .setByte(CharacterStatUDT.PORTAL, cs.getPortal())
