@@ -6,8 +6,12 @@ import kinoko.database.DatabaseManager;
 import kinoko.packet.CentralPacket;
 import kinoko.packet.field.MessengerPacket;
 import kinoko.packet.world.BroadcastPacket;
+import kinoko.packet.world.ExpeditionPacket;
 import kinoko.packet.world.GuildPacket;
 import kinoko.packet.world.PartyPacket;
+import kinoko.server.expedition.Expedition;
+import kinoko.server.expedition.ExpeditionRequest;
+import kinoko.server.expedition.ExpeditionResultType;
 import kinoko.server.guild.*;
 import kinoko.server.header.CentralHeader;
 import kinoko.server.memo.Memo;
@@ -76,6 +80,7 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
                 case MessengerRequest -> handleMessengerRequest(remoteServerNode, inPacket);
                 case PartyRequest -> handlePartyRequest(remoteServerNode, inPacket);
                 case GuildRequest -> handleGuildRequest(remoteServerNode, inPacket);
+                case ExpeditionRequest -> handleExpeditionRequest(remoteServerNode, inPacket);
                 case BoardRequest -> handleBoardRequest(remoteServerNode, inPacket);
                 case null -> log.error("Central Server received an unknown opcode : {}", op);
                 default -> log.error("Central Server received an unhandled header : {}", header);
@@ -1051,6 +1056,444 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
         }
     }
 
+    private void handleExpeditionRequest(RemoteServerNode remoteServerNode, InPacket inPacket) {
+        final int characterId = inPacket.decodeInt();
+        final ExpeditionRequest expeditionRequest = ExpeditionRequest.decode(inPacket);
+        // Resolve requester user
+        final Optional<RemoteUser> remoteUserResult = centralServerNode.getRemoteUserByCharacterId(characterId);
+        if (remoteUserResult.isEmpty()) {
+            log.error("Failed to resolve user with character ID : {} for ExpeditionRequest", characterId);
+            return;
+        }
+        final RemoteUser remoteUser = remoteUserResult.get();
+        // Process request
+        switch (expeditionRequest.getRequestType()) {
+            case Load -> {
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(expeditionRequest.getExpeditionId());
+                if (expedResult.isEmpty()) {
+                    remoteUser.setExpeditionId(0);
+                    remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), null, null));
+                    return;
+                }
+                try (var lockedExpedition = expedResult.get().acquire()) {
+                    final Expedition expedition = lockedExpedition.get();
+                    if (!expedition.hasMember(remoteUser.getCharacterId())) {
+                        remoteUser.setExpeditionId(0);
+                        remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), null, null));
+                        return;
+                    }
+                    remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), expedition.createInfo(remoteUser), ExpeditionPacket.loadExpedDone(expedition)));
+                }
+            }
+            case CreateNew -> {
+                log.debug("expedition quest ID: {}", expeditionRequest.getSelectQuestId());
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+                if (expedResult.isPresent()) {
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.of(ExpeditionResultType.YouJoined2))); // Already have joined a exped.
+                    return;
+                }
+
+                // New expedition id
+                final Optional<Integer> expedIdResult = DatabaseManager.idAccessor().nextExpedId();
+                if (expedIdResult.isEmpty()) {
+                    return;
+                }
+
+                // New party id
+                final Optional<Integer> partyIdResult = DatabaseManager.idAccessor().nextPartyId();
+                if (partyIdResult.isEmpty()) {
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), PartyPacket.serverMsg("Your request has failed. Please try again later")));
+                    return;
+                }
+
+                // Create exped
+                final Party party = centralServerNode.createNewParty(partyIdResult.get(), remoteUser);
+                final Expedition exped = centralServerNode.createNewExpedition(expedIdResult.get(), expeditionRequest.getSelectQuestId(), remoteUser);
+                try (var lockedExpedition = exped.acquire()) {
+                    remoteUser.setPartyId(party.getPartyId());
+                    remoteServerNode.write(CentralPacket.partyResult(remoteUser.getCharacterId(), party.createInfo(remoteUser), PartyPacket.createNewPartyDone(party, remoteUser.getTownPortal()))); // You have created a new party.
+
+                    exped.addParty(party);
+                    remoteUser.setExpeditionId(exped.getExpeditionId());
+                    remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), exped.createInfo(remoteUser), ExpeditionPacket.createNewExpedDone(exped)));
+                }
+            }
+            case Withdraw -> {
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+                if (expedResult.isEmpty()) {
+                    log.debug("Expedition Withdraw - Failed to resolve expedition {}.", remoteUser.getExpeditionId());
+                    remoteUser.setExpeditionId(0);
+                    remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), null, null));
+                    return;
+                }
+                try (var lockedExpedition = expedResult.get().acquire()) {
+                    final Expedition expedition = lockedExpedition.get();
+                    if (remoteUser.getCharacterId() == expedition.getMasterId()) {
+                        // Disband exped
+                        if (!centralServerNode.removeExpedition(expedition)) {
+                            log.error("Failed to disband expedition {}", expedition.getExpeditionId());
+                            return;
+                        }
+                        // Broadcast disband packet to exped and update exped ids
+                        final OutPacket outPacket = ExpeditionPacket.of(ExpeditionResultType.Removed); // The expedition has been disbanded.
+                        forEachExpedPartyMember(expedition, (member, node) -> {
+
+                            Optional<Party> partyResult = centralServerNode.getPartyById(member.getPartyId());
+                            if (partyResult.isEmpty()) {
+                                log.debug("Expedition member {}'s party {} is invalid.", member.getCharacterName(), member.getPartyId());
+                                return;
+                            }
+                            Party party = partyResult.get();
+
+                            member.setExpeditionId(0);
+                            member.setPartyId(0);
+                            node.write(CentralPacket.partyResult(member.getCharacterId(), null, PartyPacket.withdrawPartyDone(party, remoteUser, true, false)));
+                            //node.write(CentralPacket.userPacketReceive(member.getCharacterId(), PartyPacket.withdrawPartyDone(party, remoteUser, true, false)));
+                            node.write(CentralPacket.expeditionResult(member.getCharacterId(), null, ExpeditionPacket.of(ExpeditionResultType.Removed)));
+                            //node.write(CentralPacket.userPacketReceive(member.getCharacterId(), outPacket));
+                        });
+                    } else {
+                        Optional<Party> partyResult = centralServerNode.getPartyById(remoteUser.getPartyId());
+                        if (partyResult.isEmpty()) {
+                            log.debug("RemoteUser party is invalid.");
+                            return;
+                        }
+                        Party party = partyResult.get();
+
+                        party.removeMember(remoteUser);
+                        expedition.removeMember(remoteUser);
+
+                        final OutPacket outPacket = ExpeditionPacket.withdrawExpedDone(expedition, remoteUser); // You have left the exped. | '%s' have left the exped.
+                        // Broadcast withdraw packet to exped
+                        forEachExpedPartyMember(expedition, (member, node) -> {
+                            if (member.getPartyId() == party.getPartyId()) {
+                                node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.withdrawPartyDone(party, remoteUser, false, false)));
+                            }
+                            node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.loadExpedDone(expedition))); // update member index
+                            node.write(CentralPacket.userPacketReceive(member.getCharacterId(), outPacket));
+                        });
+
+                        // Update user
+                        remoteUser.setExpeditionId(0);
+                        remoteUser.setPartyId(0);
+                        remoteServerNode.write(CentralPacket.partyResult(remoteUser.getCharacterId(), null, PartyPacket.withdrawPartyDone(party, remoteUser, false, false)));
+                        remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.withdrewExped(remoteUser)));
+
+                    }
+                }
+            }
+            case Response -> {
+                final int response = expeditionRequest.getResponse();
+
+                // Resolve inviter
+                final String inviterName = expeditionRequest.getCharacterName();
+                final Optional<RemoteUser> inviterResult = centralServerNode.getRemoteUserByCharacterName(inviterName); // target name
+                if (inviterResult.isEmpty()) {
+                    log.debug("Expedition - Could not resolve inviter name {}.", inviterName);
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.responseInvite(remoteUser, 0))); // '%s' could not be found in the current server.
+                    return;
+                }
+                RemoteUser inviter = inviterResult.get();
+
+                remoteServerNode.write(CentralPacket.userPacketReceive(inviter.getCharacterId(), ExpeditionPacket.responseInvite(remoteUser, expeditionRequest.getResponse())));
+
+                if (response == 8) { // Accept
+                    final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(inviterResult.get().getExpeditionId());
+                    if (expedResult.isEmpty()) {
+                        remoteUser.setExpeditionId(0);
+                        remoteServerNode.write(CentralPacket.expeditionResult(remoteUser.getCharacterId(), null, ExpeditionPacket.of(ExpeditionResultType.JoinFail)));
+                        return;
+                    }
+
+                    try (var lockedExpedition = expedResult.get().acquire()) {
+                        final Expedition expedition = lockedExpedition.get();
+                        // Check if invite was valid
+                        if (!expedition.unregisterInvite(inviter.getCharacterId(), remoteUser.getCharacterId())) {
+                            log.debug("Expedition - invalid invite!");
+                            remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.of(ExpeditionResultType.JoinFail)));
+                            return;
+                        }
+
+                        // Check for party slots
+                        if (!expedition.canAddMember(remoteUser)) {
+                            // Add to a new party
+                            if (expedition.getParties().size() < GameConstants.EXPEDITION_MAX) {
+                                final Optional<Integer> partyIdResult = DatabaseManager.idAccessor().nextPartyId();
+                                if (partyIdResult.isEmpty()) {
+                                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), PartyPacket.serverMsg("Your request has failed. Please try again later")));
+                                    return;
+                                }
+
+                                final Party party = centralServerNode.createNewParty(partyIdResult.get(), remoteUser);
+                                remoteUser.setPartyId(party.getPartyId());
+                                remoteServerNode.write(CentralPacket.partyResult(remoteUser.getCharacterId(), party.createInfo(remoteUser), PartyPacket.createNewPartyDone(party, remoteUser.getTownPortal())));
+                                expedition.addParty(party);
+                            } else {
+                                log.debug("could not join...........");
+                                remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.of(ExpeditionResultType.JoinFail))); // The exped you're trying to join is already in full capacity.
+                                return;
+                            }
+                        }
+
+
+                        // Get free party
+                        int partyId = expedition.getFreeParty(remoteUser);
+                        log.debug("Expedition - found free slot at party {}!", partyId);
+
+                        final Optional<Party> partyResult = centralServerNode.getPartyById(partyId);
+                        if (partyResult.isEmpty()) {
+                            log.debug("Could not resolve party!");
+                            return;
+                        }
+                        Party party = partyResult.get();
+
+                        expedition.addMember(remoteUser);
+
+                        // Broadcast join packet to exped
+                        final OutPacket outPacket = ExpeditionPacket.loadExpedDone(expedition);
+                        forEachExpedPartyMember(expedition, (member, node) -> {
+                            if (member.getCharacterId() == remoteUser.getCharacterId()) {
+                                member.setPartyId(partyId);
+                                member.setExpeditionId(expedition.getExpeditionId());
+                                node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.youJoinedExped(expedition, member)));
+                            } else {
+                                node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.joinExpedDone(expedition, remoteUser)));
+                            }
+
+                            node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.joinPartyDone(party, remoteUser)));
+                            node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.loadExpedDone(expedition)));
+                        });
+                    }
+
+                }
+            }
+            case Invite -> {
+                // Resolve expedition
+                final Expedition expedition;
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+
+                if (expedResult.isEmpty()) {
+                    log.debug("Could not resolve expedition {} for {}'s invite.", remoteUser.getExpeditionId(), remoteUser.getCharacterName());
+                    return;
+                }
+                expedition = expedResult.get();
+
+                // Resolve target
+                final String targetName = expeditionRequest.getCharacterName();
+                final Optional<RemoteUser> targetResult = centralServerNode.getRemoteUserByCharacterName(targetName); // target name
+                if (targetResult.isEmpty()) {
+                    log.debug("Expedition - Could not resolve target name {}.", targetName);
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.responseInvite(remoteUser, 0)));
+                    return;
+                }
+                final RemoteUser target = targetResult.get();
+                if (target.getPartyId() != 0) {
+                    log.debug("Expedition - Target {} is in another party.", targetName);
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.responseInvite(target, 2)));
+                    return;
+                }
+                if (target.getLevel() < expedition.getMinLevel() || target.getLevel() > expedition.getMaxLevel()) {
+                    log.debug("Expedition - Target {} does not meet the expedition level requirement.", targetName);
+                    remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.responseInvite(target, 3)));
+                    return;
+                }
+                if (target.getExpeditionId() != 0) {
+                    log.debug("Expedition - Target {} is in another expedition.", targetName);
+                    //remoteServerNode.write
+                    return;
+                }
+                // Resolve target node
+                final Optional<RemoteServerNode> targetNodeResult = centralServerNode.getChannelServerNodeById(target.getChannelId());
+                if (targetNodeResult.isEmpty()) {
+                    log.debug("Expedition - Unable to find user {}.", targetName);
+                    //remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.serverMsg(String.format("Unable to find '%s'", targetName))));
+                    return;
+                }
+                final RemoteServerNode targetNode = targetNodeResult.get();
+                // Check if target can be added to exped
+                try (var lockedExpedition = expedition.acquire()) {
+                    if (expedition.getFreeParty(target) == 0) {
+                        log.debug("party id is 0! invite");
+                        return;
+                    }
+                    // Register exped invite and write invite packet to client
+                    expedition.registerInvite(remoteUser.getCharacterId(), target.getCharacterId());
+                    targetNodeResult.get().write(CentralPacket.userPacketReceive(target.getCharacterId(), ExpeditionPacket.inviteExped(remoteUser, expedition.getQuestId())));
+                }
+            }
+            case Kick -> {
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+                if (expedResult.isEmpty()) {
+                    //remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.of(ExpeditionResultType.KickExpedition_Unknown))); // Your request for a exped didn't work due to an unexpected error.
+                    return;
+                }
+                try (var lockedExpedition = expedResult.get().acquire()) {
+                    // Check that the kick request is valid
+                    final Expedition expedition = lockedExpedition.get();
+                    final int targetId = expeditionRequest.getCharacterId();
+                    final Optional<RemoteUser> targetMemberResult = expedition.getMember(targetId);
+                    if (expedition.getMasterId() != remoteUser.getCharacterId() || targetMemberResult.isEmpty() || !expedition.removeMember(targetMemberResult.get())) {
+                        log.debug("Kick failed on character {}", targetId);
+                        return;
+                    }
+                    final RemoteUser targetMember = targetMemberResult.get();
+
+                    targetMember.setExpeditionId(0);
+
+                    final Optional<Party> partyResult = centralServerNode.getPartyById(targetMember.getPartyId());
+                    if (partyResult.isEmpty()) {
+                        log.debug("Could not resolve party!");
+                        return;
+                    }
+                    Party party = partyResult.get();
+
+                    // Broadcast kick packet to expedition
+                    final OutPacket outPacket = ExpeditionPacket.kickExpedDone(targetMember);
+                    forEachExpedPartyMember(expedition, (member, node) -> {
+                        if (member.getPartyId() == targetMember.getPartyId()) {
+                            node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.loadPartyDone(party)));
+                        }
+
+                        node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.kickExpedDone(targetMember))); // '%s' have been expelled from the expedition.
+                        node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.loadExpedDone(expedition)));
+                    });
+
+                    targetMember.setPartyId(0);
+
+                    // Resolve target node
+                    final Optional<RemoteServerNode> targetNodeResult = centralServerNode.getChannelServerNodeById(targetMember.getChannelId());
+                    if (targetNodeResult.isPresent()) {
+                        final RemoteServerNode node = targetNodeResult.get();
+
+                        node.write(CentralPacket.partyResult(targetMember.getCharacterId(), null, PartyPacket.withdrawPartyDone(party, targetMember, false, true)));
+
+                        node.write(CentralPacket.expeditionResult(targetMember.getCharacterId(), null, ExpeditionPacket.of(ExpeditionResultType.YouKicked))); // You have been kicked out of the expedition.
+                    }
+                }
+            }
+            case ChangeMaster -> {
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+                if (expedResult.isEmpty()) {
+                    //remoteServerNode.write(CentralPacket.userPacketReceive(characterId, ExpeditionPacket.of(ExpeditionResultType.ChangeExpeditionBoss_Unknown))); // Your request for a exped didn't work due to an unexpected error.
+                    return;
+                }
+                try (var lockedExped = expedResult.get().acquire()) {
+                    // Try setting new exped boss
+                    final Expedition expedition = lockedExped.get();
+                    final int targetId = expeditionRequest.getCharacterId();
+
+                    final Optional<RemoteUser> targetResult = centralServerNode.getRemoteUserByCharacterId(targetId);
+                    if (targetResult.isEmpty()) {
+                        log.debug("Could not resolve target user {}", targetId);
+                        remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), ExpeditionPacket.responseInvite(remoteUser, 0)));
+                        return;
+                    }
+                    final RemoteUser targetUser = targetResult.get();
+
+                    final Optional<Party> partyResult = centralServerNode.getPartyById(targetUser.getPartyId());
+                    if (partyResult.isEmpty()) {
+                        return;
+                    }
+                    final Party party = partyResult.get();
+
+                    expedition.setMasterId(expedition.getMasterId(), targetId);
+                    expedition.setMasterPartyIndex(expedition.getPartyIndex(targetUser));
+                    party.setPartyBossId(party.getPartyBossId(), targetUser.getCharacterId());
+
+                    // Broadcast packet to exped
+                    final OutPacket outPacket = ExpeditionPacket.loadExpedDone(expedition);
+                    forEachExpedPartyMember(expedition, (member, node) -> {
+
+                        if (member.getPartyId() == party.getPartyId()) {
+                            node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.loadPartyDone(party)));
+                        }
+
+                        node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.loadExpedDone(expedition)));
+                        node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.changeMaster(expedition.getPartyIndex(targetUser))));
+                    });
+                }
+            }
+            case RelocateMember -> {
+
+                final Optional<RemoteUser> targetResult = centralServerNode.getRemoteUserByCharacterId(expeditionRequest.getCharacterId()); // target id
+                if (targetResult.isEmpty()) {
+                    log.debug("Unable to find character ID {}", expeditionRequest.getCharacterId());
+                    return;
+                }
+                final RemoteUser targetUser = targetResult.get();
+
+                final Optional<Expedition> expedResult = centralServerNode.getExpeditionById(remoteUser.getExpeditionId());
+                if (expedResult.isEmpty()) {
+                    log.debug("Unable to resolve expedition {}", remoteUser.getExpeditionId());
+                    return;
+                }
+                try (var lockedExpedition = expedResult.get().acquire()) {
+                    final Expedition expedition = lockedExpedition.get();
+
+                    final Party oldParty = centralServerNode.getPartyById(targetUser.getPartyId()).orElseThrow();
+                    Party newParty;
+                    boolean createdNewParty;
+
+                    final int targetIndex = expeditionRequest.getPartyId();
+                    if (targetIndex >= expedition.getParties().size()) {
+                        log.debug("Could not find party of index {} at expedition {}. Creating new party.", targetIndex, expedition.getExpeditionId());
+
+                        final Optional<Integer> partyIdResult = DatabaseManager.idAccessor().nextPartyId();
+                        if (partyIdResult.isEmpty()) {
+                            remoteServerNode.write(CentralPacket.userPacketReceive(remoteUser.getCharacterId(), PartyPacket.serverMsg("Your request has failed. Please try again later")));
+                            return;
+                        }
+
+                        createdNewParty = true;
+                        newParty = centralServerNode.createNewParty(partyIdResult.get(), targetUser);
+                        expedition.addParty(newParty);
+                    } else {
+                        createdNewParty = false;
+                        newParty = centralServerNode.getPartyById(expedition.getParty(targetIndex).getPartyId()).orElseThrow();
+                    }
+
+                    oldParty.removeMember(targetUser);
+                    if (oldParty.getSize() == 0) {
+                        expedition.removeParty(oldParty);
+                    }
+                    newParty.addMember(targetUser);
+                    targetUser.setPartyId(newParty.getPartyId());
+
+                    // Broadcast relocate packet to expedition
+                    final OutPacket outPacket = ExpeditionPacket.loadExpedDone(expedition);
+                    forEachExpedPartyMember(expedition, (member, node) -> {
+
+                        if (member.getCharacterId() != targetUser.getCharacterId()) {
+                            if (member.getPartyId() == oldParty.getPartyId()) { // if member is from old party
+                                node.write(CentralPacket.partyResult(member.getCharacterId(), oldParty.createInfo(member), PartyPacket.withdrawPartyDone(oldParty, targetUser, false, false)));
+                            }
+                            if (member.getPartyId() == newParty.getPartyId()) { // if member is from new party
+                                node.write(CentralPacket.partyResult(member.getCharacterId(), newParty.createInfo(member), PartyPacket.joinPartyDone(newParty, targetUser)));
+                            }
+
+                            node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.loadExpedDone(expedition)));
+
+                        }
+                    });
+
+                    // Leave old party
+                    remoteServerNode.write(CentralPacket.userPacketReceive(targetUser.getCharacterId(), PartyPacket.withdrawPartyDone(oldParty, targetUser, false, false)));
+                    // Join/create new party
+                    remoteServerNode.write(CentralPacket.partyResult(targetUser.getCharacterId(), newParty.createInfo(targetUser), createdNewParty ? PartyPacket.createNewPartyDone(newParty, targetUser.getTownPortal()) : PartyPacket.joinPartyDone(newParty, targetUser)));
+                    remoteServerNode.write(CentralPacket.expeditionResult(targetUser.getCharacterId(), expedition.createInfo(targetUser), ExpeditionPacket.loadExpedDone(expedition)));
+
+
+                }
+            }
+            case ChangePartyBoss -> {
+
+            }
+            default -> {
+                log.debug("Unhandled Expedition Request: {}", expeditionRequest.getRequestType());
+            }
+        }
+    }
+
     private void handleBoardRequest(RemoteServerNode remoteServerNode, InPacket inPacket) {
         final int characterId = inPacket.decodeInt();
         final GuildBoardRequest boardRequest = GuildBoardRequest.decode(inPacket);
@@ -1307,5 +1750,17 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
             }
             biConsumer.accept(member, targetNodeResult.get());
         }
+    }
+
+    private void forEachExpedPartyMember(Expedition expedition, BiConsumer<RemoteUser, RemoteServerNode> biConsumer) {
+        expedition.forEachParty((party) -> {
+            party.forEachMember((member) -> {
+                final Optional<RemoteServerNode> targetNodeResult = centralServerNode.getChannelServerNodeById(member.getChannelId());
+                if (targetNodeResult.isEmpty()) {
+                    return;
+                }
+                biConsumer.accept(member, targetNodeResult.get());
+            });
+        });
     }
 }

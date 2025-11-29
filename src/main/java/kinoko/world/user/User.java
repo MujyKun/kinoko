@@ -85,6 +85,7 @@ public final class User extends Life {
     private int messengerId;
     private PartyInfo partyInfo;
     private GuildInfo guildInfo;
+    private ExpeditionInfo expeditionInfo;
     private FamilyMember familyInfo;
 
     private Dialog dialog;
@@ -270,6 +271,34 @@ public final class User extends Life {
 
     public boolean isPartyBoss() {
         return getPartyInfo().isBoss();
+    }
+
+    public ExpeditionInfo getExpeditionInfo() {
+        return expeditionInfo != null ? expeditionInfo : ExpeditionInfo.EMPTY;
+    }
+
+    public void setExpeditionInfo(ExpeditionInfo expeditionInfo) {
+        this.expeditionInfo = expeditionInfo;
+        getCharacterData().setExpeditionId(getExpeditionInfo().getExpeditionId());
+    }
+
+    public int getExpeditionId() {
+        return expeditionInfo.getExpeditionId();
+    }
+
+    public boolean hasExpedition() {
+        if (expeditionInfo == null) {
+            return false;
+        }
+        return getExpeditionId() != 0;
+    }
+
+    public int getExpeditionMemberIndex() {
+        return expeditionInfo.getMemberIndex();
+    }
+
+    public boolean isExpeditionMaster() {
+        return expeditionInfo.isMaster();
     }
 
     public GuildInfo getGuildInfo() {

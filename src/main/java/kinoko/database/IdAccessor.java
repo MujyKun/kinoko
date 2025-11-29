@@ -33,6 +33,13 @@ public interface IdAccessor {
         return Optional.of(-1);
     }
 
+    default Optional<Integer> nextExpedId(){
+        if (!DatabaseManager.isRelational()){
+            throw new UnsupportedOperationException("nextExpedId needs to be implemented for this database.");
+        }
+        return Optional.of(-1);
+    }
+
     default Optional<Integer> nextMemoId(){
         if (!DatabaseManager.isRelational()){
             throw new UnsupportedOperationException("nextMemoId needs to be implemented for this database.");

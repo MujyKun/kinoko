@@ -1,5 +1,6 @@
 package kinoko.provider;
 
+import kinoko.provider.quest.QuestExpedition;
 import kinoko.provider.quest.QuestInfo;
 import kinoko.provider.wz.WzImage;
 import kinoko.provider.wz.WzPackage;
@@ -16,10 +17,12 @@ import java.util.Optional;
 public final class QuestProvider implements WzProvider {
     public static final Path QUEST_WZ = Path.of(ServerConfig.WZ_DIRECTORY, "Quest.wz");
     private static final Map<Integer, QuestInfo> questInfos = new HashMap<>();
+    private static final Map<Integer, QuestExpedition> expedInfos = new HashMap<>();
 
     public static void initialize() {
         try (final WzPackage source = WzPackage.from(QUEST_WZ)) {
             loadQuestInfos(source);
+            loadExpedInfos(source);
         } catch (IOException | ProviderError e) {
             throw new IllegalArgumentException("Exception caught while loading Quest.wz", e);
         }
@@ -49,6 +52,30 @@ public final class QuestProvider implements WzProvider {
                     (WzProperty) checkImage.getItem(entry.getKey())
             );
             questInfos.put(questId, questInfo);
+        }
+    }
+
+    public static List<QuestExpedition> getExpedInfos() {
+        return expedInfos.values().stream().toList();
+    }
+
+    public static Optional<QuestExpedition> getExpedInfo(int expedQuestId) {
+        return Optional.ofNullable(expedInfos.get(expedQuestId));
+    }
+
+    private static void loadExpedInfos(WzPackage source) throws ProviderError {
+        final WzImage infoImage = source.getDirectory().getImages().get("PQuestSearch.img");
+        final WzProperty expedList = infoImage.getProperty().get("expedition");
+        for (var entry : expedList.getItems().entrySet()) {
+            final int expedIndexId = Integer.parseInt(entry.getKey());
+            if (!(entry.getValue() instanceof WzProperty prop)) {
+                continue;
+            }
+            final QuestExpedition questExpedition = QuestExpedition.from(
+                    expedIndexId,
+                    prop
+            );
+            expedInfos.put(expedIndexId, questExpedition);
         }
     }
 }

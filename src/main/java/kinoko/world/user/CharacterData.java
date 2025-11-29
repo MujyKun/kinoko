@@ -40,6 +40,7 @@ public final class CharacterData implements Encodable {
     private int friendMax;
     private int partyId;
     private int guildId;
+    private int expeditionId;
     private Instant creationTime;
     private Instant maxLevelTime;
 
@@ -161,6 +162,14 @@ public final class CharacterData implements Encodable {
 
     public void setGuildId(int guildId) {
         this.guildId = guildId;
+    }
+
+    public int getExpeditionId() {
+        return expeditionId;
+    }
+
+    public void setExpeditionId(int expeditionId) {
+        this.expeditionId = expeditionId;
     }
 
     public Instant getCreationTime() {

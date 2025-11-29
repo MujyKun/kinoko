@@ -61,6 +61,11 @@ public final class CassandraIdAccessor extends CassandraAccessor implements IdAc
     }
 
     @Override
+    public synchronized Optional<Integer> nextExpedId() {
+        return getNextId(IdTable.EXPEDITION_ID);
+    }
+
+    @Override
     public synchronized Optional<Integer> nextMemoId() {
         return getNextId(IdTable.MEMO_ID);
     }

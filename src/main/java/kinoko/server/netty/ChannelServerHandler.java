@@ -16,6 +16,7 @@ import kinoko.server.packet.OutPacket;
 import kinoko.server.user.RemoteUser;
 import kinoko.util.Util;
 import kinoko.world.job.resistance.BattleMage;
+import kinoko.world.user.ExpeditionInfo;
 import kinoko.world.user.GuildInfo;
 import kinoko.world.user.PartyInfo;
 import kinoko.world.user.User;
@@ -61,6 +62,7 @@ public final class ChannelServerHandler extends SimpleChannelInboundHandler<InPa
                 case MessengerResult -> handleMessengerResult(inPacket);
                 case PartyResult -> handlePartyResult(inPacket);
                 case GuildResult -> handleGuildResult(inPacket);
+                case ExpeditionResult -> handleExpeditionResult(inPacket);
                 case null -> {
                     log.error("Central client {} received an unknown opcode : {}", channelServerNode.getChannelId() + 1, op);
                 }
@@ -238,4 +240,29 @@ public final class ChannelServerHandler extends SimpleChannelInboundHandler<InPa
             target.getField().broadcastPacket(UserRemote.guildMarkChanged(target, guildInfo), target);
         });
     }
+
+    private void handleExpeditionResult(InPacket inPacket) {
+        final int characterId = inPacket.decodeInt();
+        final boolean hasExpedition = inPacket.decodeBoolean();
+        final ExpeditionInfo expeditionInfo = hasExpedition ? ExpeditionInfo.decode(inPacket) : null;
+        final boolean hasPacket = inPacket.decodeBoolean();
+        final OutPacket remotePacket = hasPacket ? OutPacket.decodeRemotePacket(inPacket) : null;
+        // Resolve target user
+        final Optional<User> targetUserResult = channelServerNode.getUserByCharacterId(characterId);
+        if (targetUserResult.isEmpty()) {
+            log.error("Could not resolve target user for ExpeditionResult");
+            return;
+        }
+        // Update expedition
+        final User target = targetUserResult.get();
+        ServerExecutor.submit(target, () -> {
+            // Set expedition info and update members
+            target.setExpeditionInfo(expeditionInfo);
+            // Optional ExpeditionResult packet
+            if (remotePacket != null) {
+                target.write(remotePacket);
+            }
+        });
+    }
+
 }
