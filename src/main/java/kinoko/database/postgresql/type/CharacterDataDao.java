@@ -100,6 +100,7 @@ public class CharacterDataDao {
         cd.setFriendMax(rs.getInt("friend_max"));
         cd.setPartyId(rs.getInt("party_id"));
         cd.setGuildId(rs.getInt("guild_id"));
+        cd.setExpeditionId(rs.getInt("expedition_id"));
 
         Timestamp creationTs = rs.getTimestamp("creation_time");
         cd.setCreationTime(creationTs != null ? creationTs.toInstant() : null);
@@ -191,8 +192,8 @@ public class CharacterDataDao {
 
         String sql = """
             INSERT INTO player.characters 
-            (account_id, name, money, ext_slot_expire, friend_max, party_id, guild_id, creation_time, max_level_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            (account_id, name, money, ext_slot_expire, friend_max, party_id, guild_id, creation_time, max_level_time, expedition_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
         """;
 
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -200,12 +201,13 @@ public class CharacterDataDao {
             stmt.setString(2, characterData.getCharacterName());
             stmt.setInt(3, characterData.getInventoryManager().getMoney());
             stmt.setTimestamp(4, characterData.getInventoryManager().getExtSlotExpire() != null ?
-                    Timestamp.from(characterData.getInventoryManager().getExtSlotExpire()) : null);
+            Timestamp.from(characterData.getInventoryManager().getExtSlotExpire()) : null);
             stmt.setInt(5, characterData.getFriendMax());
             stmt.setInt(6, characterData.getPartyId());
             stmt.setInt(7, characterData.getGuildId());
             stmt.setTimestamp(8, characterData.getCreationTime() != null ? Timestamp.from(characterData.getCreationTime()) : null);
             stmt.setTimestamp(9, characterData.getMaxLevelTime() != null ? Timestamp.from(characterData.getMaxLevelTime()) : null);
+            stmt.setInt(10, characterData.getExpeditionId());
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -345,7 +347,7 @@ public class CharacterDataDao {
      */
     public static boolean saveCharacter(Connection conn, CharacterData characterData) throws SQLException {
         String sql = "UPDATE player.characters SET account_id=?, name=?, money=?, ext_slot_expire=?, " +
-                "friend_max=?, party_id=?, guild_id=?, creation_time=?, max_level_time=? " +
+                "friend_max=?, party_id=?, guild_id=?, creation_time=?, max_level_time=?, expedition_id=? " +
                 "WHERE id=?";
 
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -361,7 +363,8 @@ public class CharacterDataDao {
                     Timestamp.from(characterData.getCreationTime()) : null);
             stmt.setTimestamp(9, characterData.getMaxLevelTime() != null ?
                     Timestamp.from(characterData.getMaxLevelTime()) : null);
-            stmt.setInt(10, characterData.getCharacterId());
+            stmt.setInt(10, characterData.getExpeditionId());
+            stmt.setInt(11, characterData.getCharacterId());
 
             int updated = stmt.executeUpdate();
             if (updated == 0) {

@@ -1,4 +1,4 @@
--- 2.sql
+-- 3.sql
 -- Includes migration updates such as changing player.stats.exp
 -- from INT to BIGINT to support higher experience values.
 

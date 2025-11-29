@@ -2,15 +2,27 @@ package kinoko.database.postgresql;
 
 import com.zaxxer.hikari.HikariDataSource;
 import kinoko.database.IdAccessor;
+import kinoko.database.postgresql.type.ExpeditionDao;
 import kinoko.database.postgresql.type.ItemDao;
 import kinoko.world.item.Item;
 
+import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Optional;
 
 public final class PostgresIdAccessor extends PostgresAccessor implements IdAccessor {
 
     public PostgresIdAccessor(HikariDataSource dataSource) {
         super(dataSource);
+    }
+
+    public Optional<Integer> nextExpedId() {
+        try (Connection conn = getConnection()) {
+            return ExpeditionDao.create(conn);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return Optional.empty();
+        }
     }
 
     /**
