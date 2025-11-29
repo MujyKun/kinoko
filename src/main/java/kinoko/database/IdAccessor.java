@@ -19,12 +19,7 @@ public interface IdAccessor {
         return Optional.of(-1);
     }
 
-    default Optional<Integer> nextPartyId(){
-        if (!DatabaseManager.isRelational()){
-            throw new UnsupportedOperationException("nextPartyId needs to be implemented for this database.");
-        }
-        return Optional.of(-1);
-    }
+    Optional<Integer> nextPartyId();
 
     default Optional<Integer> nextGuildId(){
         if (!DatabaseManager.isRelational()){

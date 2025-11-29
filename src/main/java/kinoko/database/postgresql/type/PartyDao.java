@@ -4,21 +4,21 @@ package kinoko.database.postgresql.type;
 import java.sql.*;
 import java.util.Optional;
 
-public class ExpeditionDao {
+public class PartyDao {
 
     /**
-     * Generates the next available expedition ID from the expedition_id_seq sequence.
+     * Generates the next available party ID from the party_id_seq sequence.
      *
      * Executes a SELECT nextval(...) query to obtain the next sequence value,
      * safely casts it to an integer, and returns it wrapped in an Optional.
      * If the sequence value exceeds the integer range, a SQLException is thrown.
      *
      * @param conn an active SQL connection used to execute the query
-     * @return Optional containing the next expedition ID, or empty if the query returned no value
-     * @throws SQLException if a database error occurs or the sequence value exceeds integer range
+     * @return Optional containing the next party ID, or empty if no value was returned
+     * @throws SQLException if a database error occurs or the sequence value is too large
      */
     public static Optional<Integer> create(Connection conn) throws SQLException {
-        String sql = "SELECT nextval('expedition_id_seq')";
+        String sql = "SELECT nextval('party_id_seq')";
 
         try (PreparedStatement stmt = conn.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
