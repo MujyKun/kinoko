@@ -37,16 +37,16 @@ public final class WvsContext {
         for (Stat stat : Stat.ENCODE_ORDER) {
             if (statMap.containsKey(stat)) {
                 switch (stat) {
-                    case SKIN, LEVEL -> {
+                    case SKIN -> {
                         outPacket.encodeByte((byte) statMap.get(stat));
                     }
-                    case JOB, STR, DEX, INT, LUK, AP, POP -> {
+                    case JOB, STR, DEX, INT, LUK, AP, POP, LEVEL -> {
                         outPacket.encodeShort((short) statMap.get(stat));
                     }
-                    case FACE, HAIR, HP, MHP, MP, MMP, EXP, MONEY, TEMPEXP -> {
+                    case FACE, HAIR, HP, MHP, MP, MMP, MONEY, TEMPEXP -> {
                         outPacket.encodeInt((int) statMap.get(stat));
                     }
-                    case PETSN, PETSN2, PETSN3 -> {
+                    case PETSN, PETSN2, PETSN3, EXP -> {
                         outPacket.encodeLong((long) statMap.get(stat));
                     }
                     case SP -> {
@@ -183,7 +183,7 @@ public final class WvsContext {
         final OutPacket outPacket = OutPacket.of(OutHeader.CharacterInfo);
         // CWvsContext::OnCharacterInfo, TODO: add missing information
         outPacket.encodeInt(user.getCharacterId()); // dwCharacterId
-        outPacket.encodeByte(user.getLevel()); // nLevel
+        outPacket.encodeShort(user.getLevel()); // nLevel
         outPacket.encodeShort(user.getJob()); // nJob
         outPacket.encodeShort(user.getPop()); // nPOP
         outPacket.encodeByte(false); // bIsMarried

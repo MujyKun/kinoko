@@ -34,11 +34,11 @@ public final class MessagePacket {
         return outPacket;
     }
 
-    public static OutPacket incExp(int exp, int partyBonus, boolean white, boolean quest) {
+    public static OutPacket incExp(long exp, long partyBonus, boolean white, boolean quest) {
         final OutPacket outPacket = OutPacket.of(OutHeader.Message);
         outPacket.encodeByte(MessageType.IncEXP.getValue());
         outPacket.encodeByte(white); // white
-        outPacket.encodeInt(exp); // exp
+        outPacket.encodeLong(exp); // exp
         outPacket.encodeByte(quest); // bOnQuest
         outPacket.encodeInt(0); // bonus event exp
         outPacket.encodeByte(0); // nMobEventBonusPercentage
@@ -50,7 +50,7 @@ public final class MessagePacket {
             // outPacket.encodeByte(0); // nQuestBonusRemainCount (if nSpiritWeekEventEXP != 0)
         }
         outPacket.encodeByte(0); // nPartyBonusEventRate
-        outPacket.encodeInt(partyBonus); // nPartyBonusExp
+        outPacket.encodeLong(partyBonus); // nPartyBonusExp
         outPacket.encodeInt(0); // nItemBonusEXP
         outPacket.encodeInt(0); // nPremiumIPEXP
         outPacket.encodeInt(0); // nRainbowWeekEventEXP

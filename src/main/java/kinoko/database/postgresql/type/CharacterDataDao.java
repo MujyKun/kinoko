@@ -52,7 +52,7 @@ public class CharacterDataDao {
                 rs.getInt("mp"),
                 rs.getInt("max_mp"),
                 rs.getShort("ap"),
-                rs.getInt("exp"),
+                rs.getLong("exp"),
                 rs.getShort("pop"),
                 rs.getInt("pos_map"),
                 rs.getByte("portal"),
@@ -319,7 +319,7 @@ public class CharacterDataDao {
             stmt.setInt(15, cs.getMp());
             stmt.setInt(16, cs.getMaxMp());
             stmt.setInt(17, cs.getAp());
-            stmt.setInt(18, cs.getExp());
+            stmt.setLong(18, cs.getExp());
             stmt.setInt(19, cs.getPop());
             stmt.setInt(20, cs.getPosMap());
             stmt.setInt(21, cs.getPortal());

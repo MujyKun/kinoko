@@ -21,7 +21,7 @@ public final class SummonedPacket {
         // CSummonedPool::OnCreated
         outPacket.encodeInt(summoned.getId()); // dwSummonedID
         outPacket.encodeInt(summoned.getSkillId()); // nSkillID
-        outPacket.encodeByte(user.getLevel()); // nCharLevel
+        outPacket.encodeShort(user.getLevel()); // nCharLevel
         outPacket.encodeByte(summoned.getSkillLevel()); // nSLV
         // CSummoned::Init
         outPacket.encodeShort(summoned.getX()); // nX

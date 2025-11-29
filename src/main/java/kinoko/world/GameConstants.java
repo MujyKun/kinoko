@@ -7,6 +7,7 @@ import kinoko.world.job.JobConstants;
 import kinoko.world.user.data.FuncKeyMapped;
 import kinoko.world.user.data.FuncKeyType;
 
+import java.text.NumberFormat;
 import java.util.Arrays;
 import java.util.List;
 
@@ -41,8 +42,8 @@ public final class GameConstants {
     public static final int SPEED_MAX = 140;
     public static final int JUMP_MIN = 100;
     public static final int JUMP_MAX = 123;
-    public static final int LEVEL_MAX = 200;
-    public static final int[] EXP_TABLE = initializeExpTable();
+    public static final int LEVEL_MAX = 999;
+    public static final long[] EXP_TABLE = initializeExpTable();
 
     public static final int DAMAGE_MAX = 999_999;
     public static final double MASTERY_MAX = 0.95;
@@ -254,13 +255,13 @@ public final class GameConstants {
         return Tuple.of((int) (min * level), (int) (max * level));
     }
 
-    public static int getPartyBonusExp(int exp, int memberCount) {
+    public static long getPartyBonusExp(long exp, int memberCount) {
         // Party bonus for members in party : 0%, 10%, 15%, 20%, 25%, 30%
         if (memberCount < 2) {
             return 0;
         }
         final double bonus = 0.05 * Math.min(memberCount, PARTY_MAX);
-        return (int) (exp * bonus);
+        return (long) (exp * bonus);
     }
 
     public static int getHolySymbolBonus(int x, int memberCount) {
@@ -270,7 +271,7 @@ public final class GameConstants {
         return Math.min(x, 50);
     }
 
-    public static int getNextLevelExp(int level) {
+    public static long getNextLevelExp(int level) {
         return EXP_TABLE[level];
     }
 
@@ -278,9 +279,9 @@ public final class GameConstants {
         return PET_TAMENESS_TABLE[level];
     }
 
-    private static int[] initializeExpTable() {
-        // NEXTLEVEL::NEXTLEVEL
-        final int[] n = new int[201];
+    private static long[] initializeExpTable() {
+        final long[] n = new long[1000];
+
         n[1] = 15;
         n[2] = 34;
         n[3] = 57;
@@ -296,7 +297,7 @@ public final class GameConstants {
         n[13] = n[9];
         n[14] = n[9];
         for (int i = 15; i <= 29; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.2 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.2 + 0.5);
         }
         n[30] = n[29];
         n[31] = n[29];
@@ -304,10 +305,10 @@ public final class GameConstants {
         n[33] = n[29];
         n[34] = n[29];
         for (int i = 35; i <= 39; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.2 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.2 + 0.5);
         }
         for (int i = 40; i <= 69; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.08 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.08 + 0.5);
         }
         n[70] = n[69];
         n[71] = n[69];
@@ -315,7 +316,7 @@ public final class GameConstants {
         n[73] = n[69];
         n[74] = n[69];
         for (int i = 75; i <= 119; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.07 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.07 + 0.5);
         }
         n[120] = n[119];
         n[121] = n[119];
@@ -323,12 +324,43 @@ public final class GameConstants {
         n[123] = n[119];
         n[124] = n[119];
         for (int i = 125; i <= 159; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.07 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.07 + 0.5);
         }
         for (int i = 160; i <= 199; i++) {
-            n[i] = (int) ((double) n[i - 1] * 1.06 + 0.5);
+            n[i] = (long) ((double) n[i - 1] * 1.06 + 0.5);
         }
-        n[200] = 0;
+
+        n[200] = (long) ((double) n[199] * 1.06 + 0.5);
+
+        for (int i = 201; i < 999; i++) {
+            if (i < 250) {
+                // 200-249 (High Growth - 1.05x)
+                n[i] = Math.round((double) n[i - 1] * 1.05);
+            } else if (i < 300) {
+                // 250-299 (Medium Growth - 1.02x)
+                n[i] = Math.round((double) n[i - 1] * 1.02);
+            } else {
+                // 300-999 (Consistent Growth - 1.01x)
+                n[i] = Math.round((double) n[i - 1] * 1.01);
+            }
+        }
+
+        n[999] = 0;
+
+
+        // Print the EXP Table (check exptable.txt)
+//        NumberFormat nf = NumberFormat.getInstance(); // adds commas
+//        long total = 0;
+//
+//        for (int lvl = 1; lvl < n.length; lvl++) {
+//            long needed = n[lvl];
+//            total += needed;
+//
+//            System.out.println(
+//                    lvl + " -> " + nf.format(needed) + " -> " + nf.format(total)
+//            );
+//        }
+
         return n;
     }
 

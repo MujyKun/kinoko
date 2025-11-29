@@ -448,7 +448,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
     private void distributeExp() {
         // Calculate exp split based on damage dealt
         final int totalExp = getExp();
-        final Map<User, Integer> expSplit = new HashMap<>(); // user -> exp
+        final Map<User, Long> expSplit = new HashMap<>(); // user -> exp
         final Map<Integer, Set<User>> partyMembers = new HashMap<>(); // party id -> members
         for (var entry : damageDone.entrySet()) {
             final int characterId = entry.getKey();
@@ -457,7 +457,7 @@ public final class Mob extends Life implements ControlledObject, Encodable {
                 continue;
             }
             final User user = userResult.get();
-            final int splitExp = (int) ((double) entry.getValue() / getMaxHp() * totalExp);
+            final long splitExp = (long) ((double) entry.getValue() / getMaxHp() * totalExp);
             expSplit.put(user, splitExp);
             // Gather party members satisfying (1) and (2)
             final int partyId = user.getPartyId();
@@ -483,21 +483,22 @@ public final class Mob extends Life implements ControlledObject, Encodable {
             members.addAll(leechers);
         }
         // Calculate final exp split
-        final Map<User, Integer> finalExpSplit = new HashMap<>();
+        final Map<User, Long> finalExpSplit = new HashMap<>();
         for (var entry : expSplit.entrySet()) {
             final User user = entry.getKey();
-            final int exp = entry.getValue();
+            final long exp = entry.getValue();
             final Set<User> members = partyMembers.get(user.getPartyId());
             if (members != null) {
                 final int totalPartyLevel = members.stream().mapToInt(User::getLevel).sum();
                 for (User member : members) {
-                    finalExpSplit.put(member, finalExpSplit.getOrDefault(member, 0) +
-                            (int) (user == member ? 0.6 * exp : 0.0) +
-                            (int) (0.4 * exp * member.getLevel() / totalPartyLevel)
+                    long addedExp = (long) (
+                            (user == member ? 0.6 * exp : 0.0) +
+                                    (0.4 * exp * member.getLevel() / (double) totalPartyLevel)
                     );
+                    finalExpSplit.put(member, addedExp);
                 }
             } else {
-                finalExpSplit.put(user, finalExpSplit.getOrDefault(user, 0) + exp);
+                finalExpSplit.put(user, finalExpSplit.getOrDefault(user, 0L) + exp);
             }
         }
         final User highestDamageDone = finalExpSplit.entrySet().stream()
@@ -506,38 +507,38 @@ public final class Mob extends Life implements ControlledObject, Encodable {
                 .orElseThrow();
         for (var entry : finalExpSplit.entrySet()) {
             final User user = entry.getKey();
-            final int exp = entry.getValue();
+            final long exp = entry.getValue();
             final int memberCount = partyMembers.getOrDefault(user.getPartyId(), Set.of()).size();
-            final int partyBonus = GameConstants.getPartyBonusExp(exp, memberCount);
+            final long partyBonus = GameConstants.getPartyBonusExp(exp, memberCount);
             // Distribute exp
             if (user.getField() != getField()) {
                 return;
             }
-            int finalExp = exp;
-            int finalPartyBonus = partyBonus;
+            long finalExp = exp;
+            long finalPartyBonus = partyBonus;
             if (user.getSecondaryStat().hasOption(CharacterTemporaryStat.HolySymbol)) {
                 final int bonus = GameConstants.getHolySymbolBonus(user.getSecondaryStat().getOption(CharacterTemporaryStat.HolySymbol).nOption, memberCount);
                 final double multiplier = (bonus + 100) / 100.0;
-                finalExp = (int) (finalExp * multiplier);
-                finalPartyBonus = (int) (finalPartyBonus * multiplier);
+                finalExp = (long) (finalExp * multiplier);
+                finalPartyBonus = (long) (finalPartyBonus * multiplier);
             }
             if (user.getSecondaryStat().hasOption(CharacterTemporaryStat.ExpBuffRate)) {
                 final double multiplier = user.getSecondaryStat().getOption(CharacterTemporaryStat.ExpBuffRate).nOption / 100.0;
-                finalExp = (int) (finalExp * multiplier);
-                finalPartyBonus = (int) (finalPartyBonus * multiplier);
+                finalExp = (long) (finalExp * multiplier);
+                finalPartyBonus = (long) (finalPartyBonus * multiplier);
             }
             if (user.getSecondaryStat().hasOption(CharacterTemporaryStat.Dice)) {
                 final int expR = user.getSecondaryStat().getOption(CharacterTemporaryStat.Dice).getDiceInfo().getInfoArray()[17];
                 if (expR > 0) {
                     final double multiplier = (expR + 100) / 100.0;
-                    finalExp = (int) (finalExp * multiplier);
-                    finalPartyBonus = (int) (finalPartyBonus * multiplier);
+                    finalExp = (long) (finalExp * multiplier);
+                    finalPartyBonus = (long) (finalPartyBonus * multiplier);
                 }
             }
             // Family EXP modifier
             final double familyMultiplier = user.getFamilyEXPModifier();
-            finalExp = (int) (finalExp * familyMultiplier);
-            finalPartyBonus = (int) (finalPartyBonus * familyMultiplier);
+            finalExp = (long) (finalExp * familyMultiplier);
+            finalPartyBonus = (long) (finalPartyBonus * familyMultiplier);
 
             // give exp
             if (finalExp + finalPartyBonus > 0) {

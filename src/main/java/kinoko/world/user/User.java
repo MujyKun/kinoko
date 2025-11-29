@@ -562,7 +562,7 @@ public final class User extends Life {
         return getBasicStat().getMaxMp();
     }
 
-    public void addExp(int exp) {
+    public void addExp(long exp) {
         final Map<Stat, Object> addExpResult = getCharacterStat().addExp(exp, getBasicStat().getInt());
         write(WvsContext.statChanged(addExpResult, false));
         // Level up

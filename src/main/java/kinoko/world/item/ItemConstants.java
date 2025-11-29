@@ -1,5 +1,7 @@
 package kinoko.world.item;
 
+import kinoko.server.Server;
+import kinoko.server.ServerConfig;
 import kinoko.util.Util;
 import kinoko.world.GameConstants;
 
@@ -43,6 +45,10 @@ public final class ItemConstants {
 
 
     public static int getGenderFromId(int itemId) {
+        if (!ServerConfig.GENDER_LOCK){
+            return 2;
+        }
+
         if (itemId / 1000000 != 1) {
             return 2;
         }
