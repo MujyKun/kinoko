@@ -3,6 +3,7 @@ package kinoko.handler.stage;
 import kinoko.database.DatabaseManager;
 import kinoko.handler.Handler;
 import kinoko.handler.user.FriendHandler;
+import kinoko.packet.CentralPacket;
 import kinoko.packet.ClientPacket;
 import kinoko.packet.field.FieldPacket;
 import kinoko.packet.field.TransferChannelType;
@@ -10,14 +11,12 @@ import kinoko.packet.field.TransferFieldType;
 import kinoko.packet.stage.CashShopPacket;
 import kinoko.packet.stage.StagePacket;
 import kinoko.packet.user.UserLocal;
-import kinoko.packet.world.FamilyPacket;
-import kinoko.packet.world.FriendPacket;
-import kinoko.packet.world.MemoPacket;
-import kinoko.packet.world.WvsContext;
+import kinoko.packet.world.*;
 import kinoko.provider.MapProvider;
 import kinoko.provider.map.PortalInfo;
 import kinoko.server.Server;
 import kinoko.server.cashshop.Gift;
+import kinoko.server.expedition.Expedition;
 import kinoko.server.field.InstanceFieldStorage;
 import kinoko.server.guild.GuildRequest;
 import kinoko.server.header.InHeader;
@@ -31,6 +30,7 @@ import kinoko.server.node.Client;
 import kinoko.server.node.ServerExecutor;
 import kinoko.server.packet.InPacket;
 import kinoko.server.party.PartyRequest;
+import kinoko.server.user.RemoteUser;
 import kinoko.util.Tuple;
 import kinoko.world.GameConstants;
 import kinoko.world.field.Field;
@@ -50,7 +50,6 @@ import org.apache.logging.log4j.Logger;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.locks.ReentrantLock;
 
 public final class MigrationHandler {
     private static final Logger log = LogManager.getLogger(MigrationHandler.class);
@@ -118,6 +117,8 @@ public final class MigrationHandler {
             final User user = new User(c, characterData);
 
             // Set User's Family Info and broadcast initial family packet.
+            // Family logic can be outside ServerExecutor.submit since the client requests an update to the info
+            // each time it opens a family dialog.
             CentralServerNode centralServerNode = Server.getCentralServerNode();
             user.setFamilyInfo(centralServerNode.getFamilyInfo(user.getId()));  // under a lock
             user.write(FamilyPacket.userFamilyInfo(user));  // no lock needed
@@ -222,6 +223,30 @@ public final class MigrationHandler {
                 final List<Memo> memos = DatabaseManager.memoAccessor().getMemosByCharacterId(user.getCharacterId());
                 if (!memos.isEmpty()) {
                     user.write(MemoPacket.load(memos));
+                }
+
+                // Load expedition
+                // Set user's expedition info if they have one
+                int expeditionId = characterData.getExpeditionId(); // from DB
+                if (expeditionId != 0 && user.getExpeditionInfo() == ExpeditionInfo.EMPTY){
+                    Optional<Expedition> expedOpt = centralServerNode.getExpeditionById(expeditionId);
+                    if (expedOpt.isPresent()){
+                        Expedition exped = expedOpt.get();
+                        // little cheat to get remote user and making sure they belong in exped at same time.
+                        Optional<RemoteUser> remoteUserOpt = exped.getMember(user.getCharacterId());
+                        if (remoteUserOpt.isPresent()) {
+                            RemoteUser remoteUser = remoteUserOpt.get();
+                            ExpeditionInfo expedInfo = exped.createInfo(remoteUser);
+                            user.setExpeditionInfo(expedInfo);
+                            user.write(ExpeditionPacket.loadExpedDone(exped));
+                        }
+                        else {
+                            characterData.setExpeditionId(0);
+                        }
+                    }
+                    else {
+                        characterData.setExpeditionId(0);
+                    }
                 }
 
                 // Load friends
