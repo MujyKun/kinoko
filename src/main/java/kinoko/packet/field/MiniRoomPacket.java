@@ -297,8 +297,8 @@ public final class MiniRoomPacket {
             outPacket.encodeInt(money); // nMoney
             outPacket.encodeByte(items.size()); // nItem
             for (PlayerShopItem item : items) {
-                outPacket.encodeShort(item.getSetSize()); // nNumber
-                outPacket.encodeShort(item.getSetCount()); // nSet
+                outPacket.encodeShort(item.getSetCount()); // bundles available (matches enterResult)
+                outPacket.encodeShort(item.getSetSize()); // quantity per bundle (matches enterResult)
                 outPacket.encodeInt(item.getPrice()); // nPrice
                 item.getItem().encode(outPacket); // GW_ItemSlotBase::Decode
             }
@@ -337,5 +337,120 @@ public final class MiniRoomPacket {
         }
 
         // TODO : DeliverVisitList, DeliverBlackList
+    }
+
+
+    public static class EntrustedShop {
+        /**
+         * Enter result for owner when first creating the shop (firstTime = true)
+         */
+        public static OutPacket enterResult(kinoko.server.dialog.miniroom.EntrustedShop entrustedShop, User me) {
+            return enterResult(entrustedShop, me, true);
+        }
+
+        /**
+         * Enter result with explicit firstTime flag
+         * @param firstTime true when owner first creates shop (shows setup UI), false when re-entering (shows management UI)
+         */
+        public static OutPacket enterResult(kinoko.server.dialog.miniroom.EntrustedShop entrustedShop, User me, boolean firstTime) {
+            // Based on v95 reference PlayerShopPacket.getHiredMerch
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.MRP_EnterResult);
+            outPacket.encodeByte(entrustedShop.getType().getValue()); // nMiniRoomType (5 = EntrustedShop)
+            outPacket.encodeByte(entrustedShop.getMaxUsers()); // 7 in reference
+
+            int myPosition = entrustedShop.getUserIndex(me);
+            outPacket.encodeShort(myPosition); // visitor slot
+
+            outPacket.encodeInt(entrustedShop.getTemplateId()); // itemId (merchant permit)
+            outPacket.encodeString("Hired Merchant");
+
+            // Encode visitors (not the owner)
+            entrustedShop.getUsers().forEach((i, user) -> {
+                if (i != 0) { // Skip owner (index 0)
+                    outPacket.encodeByte(i);
+                    user.getCharacterData().getAvatarLook().encode(outPacket);
+                    outPacket.encodeString(user.getCharacterName());
+                    outPacket.encodeShort(user.getJob());
+                }
+            });
+            outPacket.encodeByte(-1); // end of visitor list
+
+            outPacket.encodeShort(0); // chat count
+
+            outPacket.encodeString(entrustedShop.getEmployerName()); // owner name
+
+            // Owner-specific data (only if I am the owner)
+            if (myPosition == 0) {
+                outPacket.encodeInt(entrustedShop.getTimePassedSeconds()); // timeLeft/tPass
+                outPacket.encodeByte(firstTime ? 1 : 0);
+                // Sold items list (BoughtItems)
+                final var soldItems = entrustedShop.getSoldItems();
+                outPacket.encodeByte(soldItems.size());
+                for (var soldItem : soldItems) {
+                    outPacket.encodeInt(soldItem.getItemId());
+                    outPacket.encodeShort(soldItem.getQuantity());
+                    outPacket.encodeInt(soldItem.getTotalPrice());
+                    outPacket.encodeString(soldItem.getBuyerName());
+                }
+                outPacket.encodeInt(entrustedShop.getMoney()); // meso
+                outPacket.encodeInt(0); // padding
+            }
+
+            outPacket.encodeString(entrustedShop.getTitle()); // description
+
+            outPacket.encodeByte(16); // size (16 in reference, not item max count)
+            outPacket.encodeInt(entrustedShop.getMoney()); // meso
+
+            // Items for sale
+            outPacket.encodeByte(entrustedShop.getItems().size());
+            for (PlayerShopItem item : entrustedShop.getItems()) {
+                outPacket.encodeShort(item.getSetCount()); // bundles available
+                outPacket.encodeShort(item.getSetSize()); // quantity per bundle
+                outPacket.encodeInt(item.getPrice()); // price per bundle
+                item.getItem().encode(outPacket); // item info
+            }
+            outPacket.encodeShort(0); // padding
+
+            return outPacket;
+        }
+
+        public static OutPacket buyResult(PlayerShopBuyResult buyResult) {
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.ESP_BuyResult);
+            outPacket.encodeByte(buyResult.getValue());
+            return outPacket;
+        }
+
+        public static OutPacket addSoldItem(int itemIndex, int quantity, String buyerName) {
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.ESP_AddSoldItem);
+            outPacket.encodeByte(itemIndex);
+            outPacket.encodeShort(quantity);
+            outPacket.encodeString(buyerName);
+            return outPacket;
+        }
+
+        public static OutPacket moveItemToInventory(int newSize, int itemIndex) {
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.ESP_MoveItemToInventory);
+            outPacket.encodeByte(newSize); // nItem
+            outPacket.encodeShort(itemIndex);
+            return outPacket;
+        }
+
+        public static OutPacket deliverVisitList(List<String> visitList) {
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.ESP_DeliverVisitList);
+            outPacket.encodeByte(visitList.size());
+            for (String visitor : visitList) {
+                outPacket.encodeString(visitor);
+            }
+            return outPacket;
+        }
+
+        public static OutPacket deliverBlackList(List<String> blackList) {
+            final OutPacket outPacket = MiniRoomPacket.of(MiniRoomProtocol.ESP_DeliverBlackList);
+            outPacket.encodeByte(blackList.size());
+            for (String blocked : blackList) {
+                outPacket.encodeString(blocked);
+            }
+            return outPacket;
+        }
     }
 }

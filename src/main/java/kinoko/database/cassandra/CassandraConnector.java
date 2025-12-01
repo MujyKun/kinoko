@@ -51,6 +51,7 @@ public final class CassandraConnector implements DatabaseConnector {
     private MemoAccessor memoAccessor;
     private ItemAccessor itemAccessor;
     private FamilyAccessor familyAccessor;
+    private ShopAccessor shopAccessor;
 
 
     public boolean createKeyspace(CqlSession session, String keyspace) {
@@ -125,6 +126,10 @@ public final class CassandraConnector implements DatabaseConnector {
         return familyAccessor;
     }
 
+    @Override
+    public ShopAccessor getShopAccessor() {
+        return shopAccessor;
+    }
 
     @Override
     public void initialize() {
@@ -206,6 +211,45 @@ public final class CassandraConnector implements DatabaseConnector {
         memoAccessor = new CassandraMemoAccessor(cqlSession, DATABASE_KEYSPACE);
         familyAccessor = new CassandraFamilyAccessor(cqlSession, DATABASE_KEYSPACE);
         itemAccessor = new ItemAccessor() {}; // Not needed for Cassandra.
+        shopAccessor = new ShopAccessor() {
+            // Not supported for Cassandra - Hired Merchant persistence requires PostgreSQL
+            @Override
+            public java.util.List<kinoko.server.dialog.miniroom.ShopItem> getShopItemsByCharacterId(int characterId) {
+                return java.util.Collections.emptyList();
+            }
+            @Override
+            public java.util.List<kinoko.server.dialog.miniroom.ShopItem> getUnsoldItemsByCharacterId(int characterId) {
+                return java.util.Collections.emptyList();
+            }
+            @Override
+            public java.util.List<kinoko.server.dialog.miniroom.ShopItem> getSoldItemsByCharacterId(int characterId) {
+                return java.util.Collections.emptyList();
+            }
+            @Override
+            public boolean hasItemsInFredrick(int characterId) {
+                return false;
+            }
+            @Override
+            public boolean saveUnsoldItem(kinoko.server.dialog.miniroom.ShopItem shopItem) {
+                return false;
+            }
+            @Override
+            public boolean saveSoldItem(kinoko.server.dialog.miniroom.ShopItem shopItem) {
+                return false;
+            }
+            @Override
+            public boolean deleteShopItem(long shopItemId) {
+                return false;
+            }
+            @Override
+            public boolean deleteAllShopItems(int characterId) {
+                return false;
+            }
+            @Override
+            public long getTotalMesosToCollect(int characterId) {
+                return 0;
+            }
+        };
     }
 
     @Override

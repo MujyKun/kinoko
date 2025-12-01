@@ -587,6 +587,24 @@ public final class CashItemHandler extends ItemHandler {
                 user.write(WvsContext.statChanged(Stat.FACE, user.getCharacterStat().getFace(), true));
                 user.getField().broadcastPacket(UserRemote.avatarModified(user), user);
             }
+            case SHOPEMPLOYEE -> {
+                // Hired Merchant permit - check if user can open a shop
+                final Field field = user.getField();
+                if (!field.getMapInfo().isShop()) {
+                    // Not in free market - send check result indicating they can't open here
+                    user.write(WvsContext.entrustedShopCheckResult(2)); // 2 = can only open in FM
+                    user.dispose();
+                    return;
+                }
+                // Check if user already has a dialog open
+                if (user.hasDialog()) {
+                    user.dispose();
+                    return;
+                }
+                // Send success - client will open the shop creation UI
+                // The item is NOT consumed here - it's consumed when the shop is actually created
+                user.write(WvsContext.entrustedShopCheckResult(0)); // 0 = success
+            }
             case REWARD -> {
                 // Resolve reward info
                 final Optional<ItemRewardInfo> itemRewardInfoResult = ItemProvider.getItemRewardInfo(itemId);

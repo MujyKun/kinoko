@@ -104,20 +104,16 @@ public final class PersonalShop extends MiniRoom {
                     return;
                 }
 
-                int originalInventoryQuantity = item.getQuantity();
                 // Move item from inventory to shop
                 final Optional<InventoryOperation> removeItemResult = user.getInventoryManager().removeItem(targetPosition, item, totalCount);  // updates player inventory item quantity
                 if (removeItemResult.isEmpty()) {
                     throw new IllegalStateException("Could not remove item from inventory");
                 }
-                if (originalInventoryQuantity > totalCount) {
-                    final Item partialItem = new Item(item);
-                    partialItem.setItemSn(user.getNextItemSn());
-                    partialItem.setQuantity((short) totalCount);
-                    items.add(new PlayerShopItem(partialItem, price, setSize));
-                } else {
-                    items.add(new PlayerShopItem(item, price, setSize));
-                }
+                // Create shop item - item.quantity = perBundle (setSize), bundles = setCount
+                final Item shopItem = new Item(item);
+                shopItem.setItemSn(user.getNextItemSn());
+                shopItem.setQuantity((short) setSize);  // perBundle quantity stored in item
+                items.add(new PlayerShopItem(shopItem, (short) setCount, price));
                 user.write(WvsContext.inventoryOperation(removeItemResult.get(), true));
                 user.write(MiniRoomPacket.PlayerShop.refresh(items));
             }
@@ -134,15 +130,21 @@ public final class PersonalShop extends MiniRoom {
                 }
                 // Resolve item
                 final InventoryManager im = user.getInventoryManager();
-                final PlayerShopItem item = items.get(itemIndex);
-                final int totalCount = item.getSetSize() * setCount;
-                if (totalCount <= 0 || item.getItem().getQuantity() < totalCount || !im.canAddItem(item.getItem().getItemId(), totalCount)) {
+                final PlayerShopItem shopItem = items.get(itemIndex);
+                // Check if enough bundles are available
+                if (shopItem.bundles < setCount) {
+                    user.write(MiniRoomPacket.PlayerShop.buyResult(PlayerShopBuyResult.NoSlot));
+                    user.dispose();
+                    return;
+                }
+                final int totalCount = shopItem.getSetSize() * setCount;  // perBundle * bundles bought
+                if (totalCount <= 0 || !im.canAddItem(shopItem.getItem().getItemId(), totalCount)) {
                     user.write(MiniRoomPacket.PlayerShop.buyResult(PlayerShopBuyResult.NoSlot)); // Please check if your inventory is full or not.
                     user.dispose();
                     return;
                 }
                 // Resolve price
-                final long totalPrice = ((long) item.getPrice() * setCount);
+                final long totalPrice = ((long) shopItem.getPrice() * setCount);
                 if (totalPrice <= 0 || totalPrice > Integer.MAX_VALUE || !user.getInventoryManager().canAddMoney((int) -totalPrice)) {
                     user.write(MiniRoomPacket.PlayerShop.buyResult(PlayerShopBuyResult.NoMoney)); // You do not have enough mesos.
                     user.dispose();
@@ -156,8 +158,7 @@ public final class PersonalShop extends MiniRoom {
                     return;
                 }
 
-                final int originalQuantity = item.getItem().getQuantity();
-                final Item buyItem = new Item(item.getItem());
+                final Item buyItem = new Item(shopItem.getItem());
                 buyItem.setItemSn(owner.getNextItemSn());
                 buyItem.setQuantity((short) totalCount);
 
@@ -184,7 +185,8 @@ public final class PersonalShop extends MiniRoom {
                     return;
                 }
 
-                item.getItem().setQuantity((short) (originalQuantity - totalCount));
+                // Decrease available bundles
+                shopItem.bundles -= setCount;
                 // Update clients
                 user.write(WvsContext.statChanged(Stat.MONEY, im.getMoney(), false));
                 user.write(WvsContext.inventoryOperation(addItemResult.get(), true));
@@ -203,7 +205,12 @@ public final class PersonalShop extends MiniRoom {
                     log.error("Received invalid personal shop action {}", mrp);
                     return;
                 }
-                final Optional<List<InventoryOperation>> addItemResult = user.getInventoryManager().addItem(items.remove(itemIndex).getItem());
+                final PlayerShopItem shopItem = items.remove(itemIndex);
+                // Restore full quantity: bundles * perBundle
+                final int totalQuantity = shopItem.bundles * shopItem.getSetSize();
+                final Item returnItem = new Item(shopItem.getItem());
+                returnItem.setQuantity((short) totalQuantity);
+                final Optional<List<InventoryOperation>> addItemResult = user.getInventoryManager().addItem(returnItem);
                 if (addItemResult.isEmpty()) {
                     throw new IllegalStateException("Could not add personal shop item to inventory");
                 }
@@ -248,11 +255,15 @@ public final class PersonalShop extends MiniRoom {
         assert isOwner(owner);
         // Return items
         final List<InventoryOperation> inventoryOperations = new ArrayList<>();
-        for (PlayerShopItem item : items) {
-            if (item.getItem().getQuantity() == 0) {
+        for (PlayerShopItem shopItem : items) {
+            if (shopItem.bundles == 0) {
                 continue;
             }
-            final Optional<List<InventoryOperation>> addItemResult = owner.getInventoryManager().addItem(item.getItem());
+            // Restore full quantity: bundles * perBundle
+            final int totalQuantity = shopItem.bundles * shopItem.getSetSize();
+            final Item returnItem = new Item(shopItem.getItem());
+            returnItem.setQuantity((short) totalQuantity);
+            final Optional<List<InventoryOperation>> addItemResult = owner.getInventoryManager().addItem(returnItem);
             if (addItemResult.isEmpty()) {
                 throw new IllegalStateException("Could not add personal shop item to inventory");
             }

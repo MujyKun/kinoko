@@ -3,15 +3,15 @@ package kinoko.server.dialog.miniroom;
 import kinoko.world.item.Item;
 
 public final class PlayerShopItem {
-    private final Item item;
-    private final int price;
-    private final int setSize;
+    private final Item item;      // Item with quantity = perBundle
+    private final int price;      // Price per bundle
+    public short bundles;         // Number of bundles available (public like reference)
 
 
-    public PlayerShopItem(Item item, int price, int setSize) {
+    public PlayerShopItem(Item item, short bundles, int price) {
         this.item = item;
+        this.bundles = bundles;
         this.price = price;
-        this.setSize = setSize;
     }
 
     public Item getItem() {
@@ -22,11 +22,17 @@ public final class PlayerShopItem {
         return price;
     }
 
+    /**
+     * Get per-bundle quantity (stored in item.getQuantity())
+     */
     public int getSetSize() {
-        return setSize;
+        return item.getQuantity();
     }
 
+    /**
+     * Get number of bundles available
+     */
     public int getSetCount() {
-        return item.getQuantity() / setSize;
+        return bundles;
     }
 }

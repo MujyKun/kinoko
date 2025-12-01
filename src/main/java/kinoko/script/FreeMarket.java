@@ -1,9 +1,22 @@
 package kinoko.script;
 
+import kinoko.database.DatabaseManager;
+import kinoko.packet.world.WvsContext;
+import kinoko.provider.StringProvider;
 import kinoko.script.common.Script;
 import kinoko.script.common.ScriptHandler;
 import kinoko.script.common.ScriptManager;
+import kinoko.server.dialog.miniroom.ShopItem;
+import kinoko.world.item.InventoryOperation;
+import kinoko.world.item.Item;
 import kinoko.world.quest.QuestRecordType;
+import kinoko.world.user.User;
+import kinoko.world.user.effect.Effect;
+import kinoko.packet.user.UserLocal;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 public final class FreeMarket extends ScriptHandler {
     public static void enterPortal(ScriptManager sm, String value) {
@@ -217,5 +230,118 @@ public final class FreeMarket extends ScriptHandler {
         // Black Wing Territory : Edelstein (310000000)
         //   market00 (780, -16)
         enterPortal(sm, "24");
+    }
+
+    @Script("9030000")
+    public static void fredrick(ScriptManager sm) {
+        // Fredrick (9030000)
+        //   Hidden Street : Free Market Entrance (910000000)
+        //   Handles item/meso retrieval from closed/expired hired merchant shops
+        final User user = sm.getUser();
+        final int characterId = user.getCharacterId();
+
+        // Check if user has items in Fredrick
+        if (!DatabaseManager.shopAccessor().hasItemsInFredrick(characterId)) {
+            sm.sayOk("You don't have any items or mesos to retrieve. You can open a new Hired Merchant shop if you have a permit.");
+            return;
+        }
+
+        // Get all items from Fredrick
+        final List<ShopItem> shopItems = DatabaseManager.shopAccessor().getShopItemsByCharacterId(characterId);
+        final long totalMesos = DatabaseManager.shopAccessor().getTotalMesosToCollect(characterId);
+
+        // Build the display text
+        StringBuilder sb = new StringBuilder();
+        sb.append("You have items and/or mesos to retrieve from your closed Hired Merchant.\r\n\r\n");
+
+        // Count unsold items
+        long unsoldCount = shopItems.stream().filter(si -> !si.isSold() && si.getItem() != null).count();
+        if (unsoldCount > 0) {
+            sb.append("#bUnsold Items:#k\r\n");
+            for (ShopItem shopItem : shopItems) {
+                if (!shopItem.isSold() && shopItem.getItem() != null) {
+                    String itemName = StringProvider.getItemName(shopItem.getItem().getItemId());
+                    if (itemName == null) {
+                        itemName = "Unknown Item";
+                    }
+                    sb.append(String.format("  #v%d# %s x%d\r\n",
+                            shopItem.getItem().getItemId(),
+                            itemName,
+                            shopItem.getItem().getQuantity()));
+                }
+            }
+            sb.append("\r\n");
+        }
+
+        // Show mesos from sold items
+        if (totalMesos > 0) {
+            sb.append(String.format("#bMesos from sales:#k %,d mesos\r\n\r\n", totalMesos));
+        }
+
+        sb.append("Would you like to retrieve everything?");
+
+        if (!sm.askYesNo(sb.toString())) {
+            sm.sayOk("Come back when you're ready to retrieve your items.");
+            return;
+        }
+
+        // Check if user can receive items
+        List<ShopItem> unsoldItems = shopItems.stream()
+                .filter(si -> !si.isSold() && si.getItem() != null)
+                .toList();
+
+        // Check inventory space for unsold items
+        if (!unsoldItems.isEmpty()) {
+            List<Item> itemsToAdd = unsoldItems.stream()
+                    .map(ShopItem::getItem)
+                    .toList();
+
+            if (!user.getInventoryManager().canAddItems(java.util.Set.copyOf(itemsToAdd))) {
+                sm.sayOk("You don't have enough inventory space to retrieve all items. Please make some room first.");
+                return;
+            }
+        }
+
+        // Check if user can receive mesos
+        if (totalMesos > 0 && !user.getInventoryManager().canAddMoney((int) Math.min(totalMesos, Integer.MAX_VALUE))) {
+            sm.sayOk("You cannot hold any more mesos. Please spend some first.");
+            return;
+        }
+
+        // Give items to user
+        int itemsRetrieved = 0;
+        for (ShopItem shopItem : unsoldItems) {
+            Item item = shopItem.getItem();
+            Optional<List<InventoryOperation>> result = user.getInventoryManager().addItem(item);
+            if (result.isPresent()) {
+                user.write(WvsContext.inventoryOperation(result.get(), false));
+                user.write(UserLocal.effect(Effect.gainItem(item)));
+                itemsRetrieved++;
+            }
+        }
+
+        // Give mesos to user
+        if (totalMesos > 0) {
+            int mesosToAdd = (int) Math.min(totalMesos, Integer.MAX_VALUE);
+            if (user.getInventoryManager().addMoney(mesosToAdd)) {
+                user.write(WvsContext.statChanged(kinoko.world.user.stat.Stat.MONEY, user.getInventoryManager().getMoney(), false));
+            }
+        }
+
+        // Delete all items from Fredrick after successful retrieval
+        DatabaseManager.shopAccessor().deleteAllShopItems(characterId);
+
+        // Show completion message
+        StringBuilder completionMsg = new StringBuilder();
+        completionMsg.append("Successfully retrieved:\r\n");
+        if (itemsRetrieved > 0) {
+            completionMsg.append(String.format("  - %d item(s)\r\n", itemsRetrieved));
+        }
+        if (totalMesos > 0) {
+            completionMsg.append(String.format("  - %,d mesos\r\n", totalMesos));
+        }
+        completionMsg.append("\r\nYou can now open a new Hired Merchant shop.");
+
+        sm.sayOk(completionMsg.toString());
     }
 }

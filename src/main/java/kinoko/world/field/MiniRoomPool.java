@@ -2,6 +2,7 @@ package kinoko.world.field;
 
 import kinoko.packet.field.MiniRoomPacket;
 import kinoko.packet.user.UserPacket;
+import kinoko.server.dialog.miniroom.EntrustedShop;
 import kinoko.server.dialog.miniroom.MiniRoom;
 import kinoko.server.dialog.miniroom.MiniRoomLeaveType;
 import kinoko.server.dialog.miniroom.MiniRoomType;
@@ -10,6 +11,7 @@ import kinoko.world.user.User;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 public final class MiniRoomPool extends FieldObjectPool<MiniRoom> {
     public MiniRoomPool(Field field) {
@@ -29,6 +31,19 @@ public final class MiniRoomPool extends FieldObjectPool<MiniRoom> {
 
     public void removeMiniRoom(MiniRoom miniRoom) {
         removeObject(miniRoom);
+    }
+
+    /**
+     * Get an EntrustedShop by its employer (owner) character ID.
+     * Used for hired merchant lookup when client sends employerId instead of miniRoomId.
+     */
+    public Optional<EntrustedShop> getEntrustedShopByEmployerId(int employerId) {
+        for (MiniRoom miniRoom : objects.values()) {
+            if (miniRoom instanceof EntrustedShop entrustedShop && entrustedShop.getEmployerId() == employerId) {
+                return Optional.of(entrustedShop);
+            }
+        }
+        return Optional.empty();
     }
 
     private static Rect getRectByMiniRoomType(MiniRoomType miniRoomType) {
