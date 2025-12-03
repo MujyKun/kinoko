@@ -1249,11 +1249,12 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
 
                         expedition.addMember(remoteUser);
 
+                        remoteUser.setPartyId(partyId);
+                        remoteUser.setExpeditionId(expedition.getExpeditionId());
+
                         // Broadcast join packet to exped
                         forEachExpedPartyMember(expedition, (member, node) -> {
                             if (member.getCharacterId() == remoteUser.getCharacterId()) {
-                                member.setPartyId(partyId);
-                                member.setExpeditionId(expedition.getExpeditionId());
                                 node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.youJoinedExped(expedition, member)));
                             } else {
                                 node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.joinExpedDone(expedition, remoteUser)));
