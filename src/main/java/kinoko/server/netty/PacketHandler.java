@@ -73,6 +73,12 @@ public abstract class PacketHandler extends SimpleChannelInboundHandler<InPacket
 
     @Override
     public final void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        if (cause instanceof java.net.SocketException &&
+                "Connection reset".equals(cause.getMessage())) {
+            log.debug("Client forcibly closed the connection (Connection reset).");
+            return;
+        }
+
         log.error("Exception caught while handling packet", cause);
         cause.printStackTrace();
     }

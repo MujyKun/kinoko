@@ -20,7 +20,7 @@ public final class UserPacket {
         final OutPacket outPacket = OutPacket.of(OutHeader.UserEnterField);
         outPacket.encodeInt(user.getCharacterId()); // dwCharacterId
         // CUserRemote::Init
-        outPacket.encodeByte(user.getLevel()); // nLevel
+        outPacket.encodeShort(user.getLevel()); // nLevel
         outPacket.encodeString(user.getCharacterName()); // sCharacterName
 
         final GuildInfo guildInfo = user.getGuildInfo();

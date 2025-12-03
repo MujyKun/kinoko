@@ -5,7 +5,10 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import kinoko.database.DatabaseManager;
 import kinoko.packet.CentralPacket;
-import kinoko.server.Server;
+import kinoko.provider.QuestProvider;
+import kinoko.provider.quest.QuestExpedition;
+import kinoko.server.expedition.Expedition;
+import kinoko.server.expedition.ExpeditionStorage;
 import kinoko.server.family.FamilyStorage;
 import kinoko.server.family.FamilyTree;
 import kinoko.server.guild.Guild;
@@ -53,6 +56,7 @@ public final class CentralServerNode extends Node {
     private final MessengerStorage messengerStorage = new MessengerStorage();
     private final PartyStorage partyStorage = new PartyStorage();
     private final GuildStorage guildStorage = new GuildStorage();
+    private final ExpeditionStorage expeditionStorage = new ExpeditionStorage();
     private final CompletableFuture<?> initializeFuture = new CompletableFuture<>();
     private final CompletableFuture<?> shutdownFuture = new CompletableFuture<>();
     private final int port;
@@ -283,6 +287,33 @@ public final class CentralServerNode extends Node {
         return guildStorage.getGuildById(guildId);
     }
 
+    // EXPEDITION METHODS ---------------------------------------------------------------------------------------------------
+
+    public Expedition createNewExpedition(int expeditionId, int selectQuestId, RemoteUser remoteUser) {
+        final Expedition expedition = new Expedition(expeditionId, selectQuestId, remoteUser);
+
+        Optional<QuestExpedition> expedQuestResult = QuestProvider.getExpedInfo(selectQuestId - 2000);
+        if (expedQuestResult.isEmpty()) {
+            throw new IllegalStateException("Could not get expedition quest " + selectQuestId);
+        }
+        QuestExpedition expedQuest = expedQuestResult.get();
+        expedition.setMinLevel(expedQuest.getMinLevel());
+        expedition.setMaxLevel(expedQuest.getMaxLevel());
+        expedition.setMaxMembers(expedQuest.getUserCount());
+        expeditionStorage.addExpedition(expedition);
+        return expedition;
+    }
+
+    public boolean removeExpedition(Expedition expedition) {
+        return expeditionStorage.removeExpedition(expedition);
+    }
+
+    public Optional<Expedition> getExpeditionById(int expeditionId) {
+        if (expeditionId == 0) {
+            return Optional.empty();
+        }
+        return expeditionStorage.getExpeditionById(expeditionId);
+    }
 
     // FAMILY METHODS --------------------------------------------------------------------------------------------------
     // High-level thread-safe family operations for CentralServerNode.

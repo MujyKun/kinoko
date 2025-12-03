@@ -80,6 +80,7 @@ public final class Util {
         return random.nextInt(fromInclusive, toInclusive + 1);
     }
 
+
     public static double getRandom(double origin, double bound) {
         return random.nextDouble(origin, bound);
     }

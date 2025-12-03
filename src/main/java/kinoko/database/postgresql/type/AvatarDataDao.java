@@ -79,7 +79,7 @@ public final class AvatarDataDao {
                             rs.getInt("mp"),
                             rs.getInt("max_mp"),
                             rs.getShort("ap"),
-                            rs.getInt("exp"),
+                            rs.getLong("exp"),
                             rs.getShort("pop"),
                             rs.getInt("pos_map"),
                             rs.getByte("portal"),

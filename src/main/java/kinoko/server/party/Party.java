@@ -18,7 +18,7 @@ import java.util.function.Consumer;
  * the instance stored in UserStorage.
  */
 public final class Party implements Encodable, Lockable<Party> {
-    private static final RemoteUser EMPTY_MEMBER = new RemoteUser(0, 0, "", 0, 0, GameConstants.CHANNEL_OFFLINE, GameConstants.UNDEFINED_FIELD_ID, 0, 0, 0, RemoteTownPortal.EMPTY);
+    private static final RemoteUser EMPTY_MEMBER = new RemoteUser(0, 0, "", 0, 0, GameConstants.CHANNEL_OFFLINE, GameConstants.UNDEFINED_FIELD_ID, 0, 0, 0, 0, RemoteTownPortal.EMPTY);
     private final Lock lock = new ReentrantLock();
     private final int partyId;
     private final List<RemoteUser> partyMembers;
@@ -82,6 +82,10 @@ public final class Party implements Encodable, Lockable<Party> {
         }
         this.partyBossId = newBossId;
         return true;
+    }
+
+    public int getSize() {
+        return partyMembers.size();
     }
 
     public Optional<RemoteUser> getMember(int characterId) {
@@ -161,6 +165,16 @@ public final class Party implements Encodable, Lockable<Party> {
         forEachMemberForPartyData((member) -> outPacket.encodeInt(0)); // aPQRewardType
         outPacket.encodeInt(0); // dwPQRewardMobTemplateID
         outPacket.encodeInt(0); // bPQReward
+    }
+
+    public void encodeForExped(OutPacket outPacket) {
+        // PARTYDATA::Decode (378)
+        forEachMemberForPartyData((member) -> outPacket.encodeInt(member.getCharacterId())); // adwCharacterID
+        forEachMemberForPartyData((member) -> outPacket.encodeString(member.getCharacterName(), 13)); // asCharacterName
+        forEachMemberForPartyData((member) -> outPacket.encodeInt(member.getJob())); // anJob
+        forEachMemberForPartyData((member) -> outPacket.encodeInt(member.getLevel())); // anLevel
+        forEachMemberForPartyData((member) -> outPacket.encodeInt(member.getChannelId())); // anChannelID
+        outPacket.encodeInt(partyBossId); // dwPartyBossCharacterID
     }
 
     @Override

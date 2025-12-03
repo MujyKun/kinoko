@@ -2,15 +2,55 @@ package kinoko.database.postgresql;
 
 import com.zaxxer.hikari.HikariDataSource;
 import kinoko.database.IdAccessor;
+import kinoko.database.postgresql.type.ExpeditionDao;
 import kinoko.database.postgresql.type.ItemDao;
+import kinoko.database.postgresql.type.PartyDao;
 import kinoko.world.item.Item;
 
+import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Optional;
 
 public final class PostgresIdAccessor extends PostgresAccessor implements IdAccessor {
 
     public PostgresIdAccessor(HikariDataSource dataSource) {
         super(dataSource);
+    }
+
+    /**
+     * Generates the next available party ID using the party sequence.
+     *
+     * Opens a new database connection, requests the next value from the
+     * party_id_seq sequence, and returns it wrapped in an Optional.
+     * If a database error occurs, Optional.empty() is returned.
+     *
+     * @return Optional containing the next party ID, or empty on failure
+     */
+    public Optional<Integer> nextPartyId() {
+        try (Connection conn = getConnection()) {
+            return PartyDao.create(conn);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Generates the next available expedition ID using the expedition sequence.
+     *
+     * Opens a new database connection, requests the next value from the
+     * expedition_id_seq sequence, and returns it wrapped in an Optional.
+     * If a database error occurs, Optional.empty() is returned.
+     *
+     * @return Optional containing the next expedition ID, or empty on failure
+     */
+    public Optional<Integer> nextExpedId() {
+        try (Connection conn = getConnection()) {
+            return ExpeditionDao.create(conn);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return Optional.empty();
+        }
     }
 
     /**
