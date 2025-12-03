@@ -44,6 +44,9 @@ public final class DatabaseManager {
         return connector.getFamilyAccessor();
     }
 
+    public static ShopAccessor shopAccessor() {
+        return connector.getShopAccessor();
+    }
 
     public static boolean isRelational() {
         // Get whether the database connection is a relational database.

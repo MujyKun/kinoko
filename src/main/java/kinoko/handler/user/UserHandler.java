@@ -27,6 +27,7 @@ import kinoko.server.dialog.miniroom.*;
 import kinoko.server.dialog.shop.ShopDialog;
 import kinoko.server.dialog.trunk.TrunkDialog;
 import kinoko.server.header.InHeader;
+import kinoko.server.node.ServerExecutor;
 import kinoko.server.memo.Memo;
 import kinoko.server.memo.MemoRequestType;
 import kinoko.server.memo.MemoType;
@@ -202,6 +203,12 @@ public final class UserHandler {
             ScriptDispatcher.startNpcScript(user, npc, npc.getScript(), npc.getTemplateId());
             return;
         }
+        // Try fallback to NPC template ID as script name
+        final String fallbackScript = String.valueOf(npc.getTemplateId());
+        if (ScriptDispatcher.hasScript(fallbackScript)) {
+            ScriptDispatcher.startNpcScript(user, npc, fallbackScript, npc.getTemplateId());
+            return;
+        }
         // Handle guild rank
         if (npc.isGuildRank()) {
             user.write(GuildPacket.showGuildRanking(RankManager.getGuildRankings()));
@@ -286,6 +293,51 @@ public final class UserHandler {
             return;
         }
         trunkDialog.handlePacket(user, inPacket);
+    }
+
+    @Handler(InHeader.UserEntrustedShopRequest)
+    public static void handleUserEntrustedShopRequest(User user, InPacket inPacket) {
+        // Client sends this when double-clicking a Hired Merchant permit (503xxxx items)
+        // Packet: 00 06 00 00 00 00 00 00 00
+        // Seems to be: byte action, int unknown1, int unknown2
+        final int action = inPacket.decodeByte();
+
+        log.debug("UserEntrustedShopRequest - action: {}, remaining: {}", action, inPacket.getRemaining());
+
+        if (action == 0) {
+            // Request to check if user can open a hired merchant
+            // The packet doesn't seem to contain the item ID, so we just check if they're in FM
+
+            // Check if user is in a shop-enabled map (Free Market)
+            if (!user.getField().getMapInfo().isShop()) {
+                // Not in Free Market - can't open shop here
+                log.debug("User not in shop-enabled map");
+                user.write(WvsContext.entrustedShopCheckResult(2)); // 2 = can only open in FM
+                return;
+            }
+
+            // Check if user already has a dialog open
+            if (user.hasDialog()) {
+                log.debug("User already has dialog open");
+                user.dispose();
+                return;
+            }
+
+            // Check if user has items to retrieve from Fredrick first
+            if (DatabaseManager.shopAccessor().hasItemsInFredrick(user.getCharacterId())) {
+                log.debug("User has items in Fredrick - cannot open new shop");
+                user.write(WvsContext.entrustedShopCheckResult(3)); // 3 = retrieve items from Fredrick first
+                return;
+            }
+
+            // Send success - client will open the shop creation UI
+            // Based on v95 IDA analysis: value 7 triggers SendOpenShopRequest in client
+            log.debug("Sending entrustedShopCheckResult success (7)");
+            user.write(WvsContext.entrustedShopCheckResult(7)); // 7 = success, open UI
+        } else {
+            log.error("Unhandled UserEntrustedShopRequest action: {}", action);
+            user.dispose();
+        }
     }
 
     // INVENTORY HANDLERS ----------------------------------------------------------------------------------------------
@@ -1391,13 +1443,26 @@ public final class UserHandler {
             miniGameRoom.handlePacket(user, mrp, inPacket);
             return;
         }
-        // PersonalShop Protocol
+        // PersonalShop Protocol - also route to EntrustedShop since client uses same opcodes
         if (mrp.getValue() >= MiniRoomProtocol.PSP_PutItem.getValue() && mrp.getValue() <= MiniRoomProtocol.PSP_DeleteBlackList.getValue()) {
-            if (!(user.getDialog() instanceof PersonalShop personalShop)) {
-                log.error("Received personal shop action {} outside a personal shop", mrp);
+            if (user.getDialog() instanceof PersonalShop personalShop) {
+                personalShop.handlePacket(user, mrp, inPacket);
+                return;
+            } else if (user.getDialog() instanceof EntrustedShop entrustedShop) {
+                // Client uses PSP opcodes for EntrustedShop too - route them appropriately
+                entrustedShop.handlePacket(user, mrp, inPacket);
                 return;
             }
-            personalShop.handlePacket(user, mrp, inPacket);
+            log.error("Received personal shop action {} outside a shop", mrp);
+            return;
+        }
+        // EntrustedShop Protocol (ESP-specific opcodes)
+        if (mrp.getValue() >= MiniRoomProtocol.ESP_PutItem.getValue() && mrp.getValue() <= MiniRoomProtocol.ESP_DeleteBlackList.getValue()) {
+            if (!(user.getDialog() instanceof EntrustedShop entrustedShop)) {
+                log.error("Received entrusted shop action {} outside an entrusted shop", mrp);
+                return;
+            }
+            entrustedShop.handlePacket(user, mrp, inPacket);
             return;
         }
         // Common MiniRoom Protocol
@@ -1480,8 +1545,25 @@ public final class UserHandler {
                         } else {
                             if (itemId / 10000 != 503 || !user.getInventoryManager().hasItem(itemId, 1)) {
                                 log.error("Tried to create entrusted shop without the required item");
+                                return;
                             }
-                            // TODO: entrusted shop handling
+                            // Create entrusted shop (hired merchant)
+                            final EntrustedShop entrustedShop = new EntrustedShop(
+                                    title,
+                                    null, // no password for entrusted shops
+                                    user.getCharacterName(),
+                                    user.getCharacterId(),
+                                    itemId // templateId is the item used to create the shop
+                            );
+                            entrustedShop.setX(user.getX());
+                            entrustedShop.setY(user.getY());
+                            entrustedShop.setFoothold(user.getFoothold());
+                            entrustedShop.addUser(0, user);
+                            field.getMiniRoomPool().addMiniRoom(entrustedShop);
+                            user.setDialog(entrustedShop);
+                            // Do NOT spawn employee NPC yet - wait for owner to click "Open Shop" (MRP_Balloon)
+                            // Send enter result to the owner (firstTime=true for setup UI)
+                            user.write(MiniRoomPacket.EntrustedShop.enterResult(entrustedShop, user, true));
                         }
                     }
                     case null -> {
@@ -1546,10 +1628,17 @@ public final class UserHandler {
                     return;
                 }
                 // Resolve mini room
-                final Optional<MiniRoom> miniRoomResult = field.getMiniRoomPool().getById(miniRoomId);
+                Optional<MiniRoom> miniRoomResult = field.getMiniRoomPool().getById(miniRoomId);
                 if (miniRoomResult.isEmpty()) {
-                    user.write(MiniRoomPacket.enterResult(EnterResultType.NoRoom)); // The room is already closed.
-                    return;
+                    // For EntrustedShop, the client may send employerId instead of miniRoomId
+                    // Try to find the shop by employerId (the miniRoomId might actually be the owner's character ID)
+                    final Optional<EntrustedShop> entrustedShopResult = field.getMiniRoomPool().getEntrustedShopByEmployerId(miniRoomId);
+                    if (entrustedShopResult.isPresent()) {
+                        miniRoomResult = Optional.of(entrustedShopResult.get());
+                    } else {
+                        user.write(MiniRoomPacket.enterResult(EnterResultType.NoRoom)); // The room is already closed.
+                        return;
+                    }
                 }
                 final MiniRoom miniRoom = miniRoomResult.get();
                 // Check password
@@ -1588,6 +1677,55 @@ public final class UserHandler {
                     personalShop.updateBalloon();
                     user.setDialog(personalShop);
                     user.write(MiniRoomPacket.PlayerShop.enterResult(personalShop, user));
+                } else if (miniRoom instanceof EntrustedShop entrustedShop) {
+                    // Check if user is the owner (by employerId since owner may not be in users map)
+                    if (entrustedShop.getEmployerId() == user.getCharacterId()) {
+                        // Owner re-entering their shop for management
+                        if (entrustedShop.isOpen()) {
+                            // Close shop for maintenance while owner manages it
+                            entrustedShop.setOpen(false);
+                            // Remove all visitors (they'll get "shop closed" message)
+                            for (int i = 1; i < entrustedShop.getMaxUsers(); i++) {
+                                final User visitor = entrustedShop.getUser(i);
+                                if (visitor != null) {
+                                    visitor.write(MiniRoomPacket.leave(i, MiniRoomLeaveType.HostOut));
+                                    visitor.setDialog(null);
+                                    entrustedShop.removeUser(i);
+                                }
+                            }
+                            // Keep the NPC visible - just update the balloon to show "maintenance" state
+                            entrustedShop.updateBalloon();
+                        }
+                        // Add owner back at index 0
+                        entrustedShop.addUser(0, user);
+                        user.setDialog(entrustedShop);
+                        // Send enter result with firstTime=true so owner sees "Open Shop" button
+                        // The firstTime flag controls whether the client shows the setup UI (with Open Shop button)
+                        user.write(MiniRoomPacket.EntrustedShop.enterResult(entrustedShop, user, true));
+                    } else {
+                        // Visitor trying to enter
+                        // Check if user is blocked
+                        if (entrustedShop.getBlockedList().contains(user.getCharacterName())) {
+                            user.write(MiniRoomPacket.enterResult(EnterResultType.OnBlockedList)); // You have been banned from this shop.
+                            return;
+                        }
+                        // Check if shop is open for visitors
+                        if (!entrustedShop.isOpen()) {
+                            user.write(MiniRoomPacket.enterResult(EnterResultType.IsManaging)); // This shop is in maintenance.
+                            return;
+                        }
+                        final int userIndex = entrustedShop.getOpenUserIndex();
+                        if (userIndex < 0) {
+                            user.write(MiniRoomPacket.enterResult(EnterResultType.Full)); // You can't enter the room due to full capacity.
+                            return;
+                        }
+                        entrustedShop.broadcastPacket(MiniRoomPacket.enterBase(userIndex, user));
+                        entrustedShop.addUser(userIndex, user);
+                        entrustedShop.addVisitor(user.getCharacterName());
+                        entrustedShop.updateBalloon();
+                        user.setDialog(entrustedShop);
+                        user.write(MiniRoomPacket.EntrustedShop.enterResult(entrustedShop, user, false));
+                    }
                 } else {
                     log.error("Tried to enter mini room with unhandled type : {}", miniRoom.getType());
                     user.write(BroadcastPacket.alert("This request has failed due to an unknown error."));
@@ -1610,12 +1748,13 @@ public final class UserHandler {
             }
             case MRP_Leave -> {
                 if (!(user.getDialog() instanceof MiniRoom miniRoom)) {
-                    log.error("Received {} without a mini room", mrp);
+                    // This can happen normally when EntrustedShop owner opens shop
+                    // (MRP_Balloon already cleared their dialog before MRP_Leave arrives)
                     return;
                 }
                 final int userIndex = miniRoom.getUserIndex(user);
                 if (userIndex < 0) {
-                    log.error("Received {} with user index", userIndex);
+                    log.error("Received {} with invalid user index {}", mrp, userIndex);
                     return;
                 }
                 miniRoom.leave(user);
@@ -1629,6 +1768,89 @@ public final class UserHandler {
                 if (miniRoom instanceof PersonalShop personalShop) {
                     personalShop.setOpen(open);
                     personalShop.updateBalloon();
+                } else if (miniRoom instanceof EntrustedShop entrustedShop) {
+                    if (open && !entrustedShop.isOpen()) {
+                        // Check if this is the first time opening (permit not yet consumed)
+                        // vs reopening after maintenance (permit already consumed, openTime is set)
+                        final boolean isFirstOpen = entrustedShop.getOpenTime() == null;
+
+                        if (isFirstOpen) {
+                            // Opening the shop for the first time - consume permit
+                            final InventoryManager im = user.getInventoryManager();
+
+                            // Find and consume the permit item
+                            final int permitItemId = entrustedShop.getTemplateId();
+                            final Item permitItem = im.getInventoryByType(InventoryType.CASH).getItems().values().stream()
+                                    .filter(item -> item.getItemId() == permitItemId)
+                                    .findFirst()
+                                    .orElse(null);
+
+                            if (permitItem == null) {
+                                log.error("Could not find permit item {} to consume", permitItemId);
+                                user.dispose();
+                                return;
+                            }
+
+                            // Get expiration from permit item (in days from Commodity.Period)
+                            Instant expireTime = permitItem.getDateExpire();
+                            if (expireTime == null) {
+                                // Default to 1 day if no expiration set
+                                expireTime = Instant.now().plus(1, java.time.temporal.ChronoUnit.DAYS);
+                            }
+
+                            // Find the position of the permit item
+                            int permitPosition = -1;
+                            for (var entry : im.getInventoryByType(InventoryType.CASH).getItems().entrySet()) {
+                                if (entry.getValue() == permitItem) {
+                                    permitPosition = entry.getKey();
+                                    break;
+                                }
+                            }
+                            if (permitPosition < 0) {
+                                log.error("Could not find permit item position");
+                                user.dispose();
+                                return;
+                            }
+
+                            // Consume the permit item
+                            final Optional<InventoryOperation> removeResult = im.removeItem(permitPosition, permitItem, 1);
+                            if (removeResult.isEmpty()) {
+                                log.error("Failed to consume permit item");
+                                user.dispose();
+                                return;
+                            }
+                            user.write(WvsContext.inventoryOperation(removeResult.get(), true));
+
+                            // Set shop timing
+                            entrustedShop.setOpenTime(Instant.now());
+                            entrustedShop.setExpirationTime(expireTime);
+
+                            // Schedule expiration task
+                            final long delayMs = java.time.Duration.between(Instant.now(), expireTime).toMillis();
+                            if (delayMs > 0) {
+                                final var expirationTask = ServerExecutor.schedule(field, () -> {
+                                    if (entrustedShop.isOpen()) {
+                                        entrustedShop.closeShop(MiniRoomLeaveType.ClosedTimeOver);
+                                    }
+                                }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                                entrustedShop.setExpirationTask(expirationTask);
+                            }
+                        }
+
+                        // Spawn/respawn the employee NPC on the field
+                        field.broadcastPacket(FieldPacket.employeeEnterField(entrustedShop));
+                    }
+                    if (open) {
+                        entrustedShop.setOpen(true);
+                        entrustedShop.updateBalloon();
+                        // Owner leaves the dialog after opening (shop runs independently)
+                        // This is ESP_GoOut behavior - owner can walk away
+                        user.setDialog(null);
+                        entrustedShop.removeUser(0);
+                    } else {
+                        // Owner clicked "Close Shop" - close the shop properly
+                        entrustedShop.closeShop(MiniRoomLeaveType.UserRequest);
+                    }
                 } else {
                     log.error("Received {} for unhandled mini room type {}", mrp, miniRoom.getType());
                 }

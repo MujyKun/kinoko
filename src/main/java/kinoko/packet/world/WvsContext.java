@@ -326,4 +326,37 @@ public final class WvsContext {
         }
         return outPacket;
     }
+
+    public static OutPacket entrustedShopCheckResult(int result) {
+        // CWvsContext::OnEntrustedShopCheckResult
+        // Result values (based on v95 IDA analysis):
+        // 7 = Success - opens shop creation UI (calls SendOpenShopRequest)
+        // 8 = Store is currently open at channel (decode4 mapId, decode1 channel - shows location)
+        // 9 = Please retrieve items from Fredrick first
+        // 10 = Another character is currently using the item
+        // 11 = You are currently unable to open the store
+        // 15 = Please retrieve your items from Fredrick
+        // 16 = Store is open at another channel (decode4, decode1 - asks to change channel)
+        // 17 = Managing store dialog
+        // 18 = Custom notice message (decode1, decodeStr)
+        final OutPacket outPacket = OutPacket.of(OutHeader.EntrustedShopCheckResult);
+        outPacket.encodeByte(result);
+        return outPacket;
+    }
+
+    public static OutPacket entrustedShopCheckResultOpenShop() {
+        // Result 7 = Success - client will call SendOpenShopRequest to open the shop UI
+        final OutPacket outPacket = OutPacket.of(OutHeader.EntrustedShopCheckResult);
+        outPacket.encodeByte(7);
+        return outPacket;
+    }
+
+    public static OutPacket entrustedShopCheckResultWithLocation(int mapId, int channelId) {
+        // Result 8 = Store is currently open at channel X, Free Market Y
+        final OutPacket outPacket = OutPacket.of(OutHeader.EntrustedShopCheckResult);
+        outPacket.encodeByte(8);
+        outPacket.encodeInt(mapId); // Map ID (used to calculate Free Market room number)
+        outPacket.encodeByte(channelId); // Channel
+        return outPacket;
+    }
 }

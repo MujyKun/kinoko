@@ -120,7 +120,7 @@ public final class FieldPacket {
         outPacket.encodeByte(0); // nGameKind
         outPacket.encodeByte(shop.getUsers().size()); // nCurUsers
         outPacket.encodeByte(shop.getMaxUsers()); // nMaxUsers
-        outPacket.encodeByte(shop.isGameOn()); // bGameOn
+        // Note: bGameOn is NOT decoded by client - it uses constant 0
         return outPacket;
     }
 
@@ -131,7 +131,7 @@ public final class FieldPacket {
     }
 
     public static OutPacket employeeMiniRoomBalloon(EntrustedShop shop) {
-        final OutPacket outPacket = OutPacket.of(OutHeader.EmployeeLeaveField);
+        final OutPacket outPacket = OutPacket.of(OutHeader.EmployeeMiniRoomBalloon);
         outPacket.encodeInt(shop.getEmployerId());
         // CEmployee::SetBalloon
         outPacket.encodeByte(shop.getType().getValue()); // nMiniRoomType
@@ -140,7 +140,7 @@ public final class FieldPacket {
         outPacket.encodeByte(0); // nGameKind
         outPacket.encodeByte(shop.getUsers().size()); // nCurUsers
         outPacket.encodeByte(shop.getMaxUsers()); // nMaxUsers
-        outPacket.encodeByte(shop.isGameOn()); // bGameOn
+        // Note: bGameOn is NOT decoded by client - it uses constant 0
         return outPacket;
     }
 

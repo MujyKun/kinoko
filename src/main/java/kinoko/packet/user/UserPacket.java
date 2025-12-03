@@ -58,7 +58,9 @@ public final class UserPacket {
         outPacket.encodeInt(0); // nTamingMobExp
         outPacket.encodeInt(0); // nTamingMobFatigue
 
-        if (user.getDialog() instanceof MiniRoom miniRoom && miniRoom.getType().isBalloon() && miniRoom.isOwner(user)) {
+        // EntrustedShop uses employee NPC balloon, not user balloon
+        if (user.getDialog() instanceof MiniRoom miniRoom && miniRoom.getType().isBalloon() && miniRoom.isOwner(user)
+                && miniRoom.getType() != kinoko.server.dialog.miniroom.MiniRoomType.EntrustedShop) {
             outPacket.encodeByte(miniRoom.getType().getValue()); // nMiniRoomType
             outPacket.encodeInt(miniRoom.getId()); // dwMiniRoomSN
             outPacket.encodeString(miniRoom.getTitle()); // sMiniRoomTitle

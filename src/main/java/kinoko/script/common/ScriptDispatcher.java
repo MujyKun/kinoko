@@ -47,6 +47,10 @@ public final class ScriptDispatcher {
         scriptExecutor.shutdown();
     }
 
+    public static boolean hasScript(String scriptName) {
+        return scriptMap.containsKey(scriptName);
+    }
+
     public static void startNpcScript(User user, FieldObject source, String scriptName, int speakerId) {
         startScript(ScriptType.NPC, scriptName, user, source, speakerId);
     }

@@ -4,6 +4,8 @@ import kinoko.packet.field.FieldPacket;
 import kinoko.packet.field.MobPacket;
 import kinoko.packet.field.NpcPacket;
 import kinoko.packet.user.*;
+import kinoko.server.dialog.miniroom.EntrustedShop;
+import kinoko.server.dialog.miniroom.MiniRoom;
 import kinoko.packet.world.MessagePacket;
 import kinoko.packet.world.WvsContext;
 import kinoko.provider.QuestProvider;
@@ -158,6 +160,12 @@ public final class UserPool extends FieldObjectPool<User> {
         });
         field.getAffectedAreaPool().forEach((affectedArea) -> {
             user.write(FieldPacket.affectedAreaCreated(affectedArea));
+        });
+        // Send open EntrustedShops (Hired Merchants) to user
+        field.getMiniRoomPool().forEach((miniRoom) -> {
+            if (miniRoom instanceof EntrustedShop entrustedShop && entrustedShop.isOpen()) {
+                user.write(FieldPacket.employeeEnterField(entrustedShop));
+            }
         });
     }
 
