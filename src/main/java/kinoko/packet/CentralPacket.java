@@ -1,5 +1,6 @@
 package kinoko.packet;
 
+import kinoko.server.expedition.ExpeditionRequest;
 import kinoko.server.guild.GuildBoardRequest;
 import kinoko.server.guild.GuildRequest;
 import kinoko.server.header.CentralHeader;
@@ -10,6 +11,7 @@ import kinoko.server.node.RemoteServerNode;
 import kinoko.server.packet.OutPacket;
 import kinoko.server.party.PartyRequest;
 import kinoko.server.user.RemoteUser;
+import kinoko.world.user.ExpeditionInfo;
 import kinoko.world.user.GuildInfo;
 import kinoko.world.user.PartyInfo;
 
@@ -235,6 +237,27 @@ public final class CentralPacket {
         outPacket.encodeByte(guildInfo != null);
         if (guildInfo != null) {
             guildInfo.encode(outPacket);
+        }
+        return outPacket;
+    }
+
+    public static OutPacket expeditionRequest(int characterId, ExpeditionRequest expeditionRequest) {
+        final OutPacket outPacket = OutPacket.of(CentralHeader.ExpeditionRequest);
+        outPacket.encodeInt(characterId);
+        expeditionRequest.encode(outPacket);
+        return outPacket;
+    }
+
+    public static OutPacket expeditionResult(int characterId, ExpeditionInfo expeditionInfo, OutPacket remotePacket) {
+        final OutPacket outPacket = OutPacket.of(CentralHeader.ExpeditionResult);
+        outPacket.encodeInt(characterId);
+        outPacket.encodeByte(expeditionInfo != null);
+        if (expeditionInfo != null) {
+            expeditionInfo.encode(outPacket);
+        }
+        outPacket.encodeByte(remotePacket != null);
+        if (remotePacket != null) {
+            outPacket.encodeRemotePacket(remotePacket);
         }
         return outPacket;
     }

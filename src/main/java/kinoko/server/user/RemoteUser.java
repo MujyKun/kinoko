@@ -16,9 +16,12 @@ public final class RemoteUser implements Encodable {
     private int messengerId;
     private int partyId;
     private int guildId;
+    private int expeditionId;
     private RemoteTownPortal townPortal;
 
-    public RemoteUser(int accountId, int characterId, String characterName, int level, int job, int channelId, int fieldId, int messengerId, int partyId, int guildId, RemoteTownPortal townPortal) {
+    public RemoteUser(int accountId, int characterId, String characterName, int level, int job, int channelId,
+                      int fieldId, int messengerId, int partyId, int guildId, int expeditionId,
+                      RemoteTownPortal townPortal) {
         this.accountId = accountId;
         this.characterId = characterId;
         this.characterName = characterName;
@@ -29,6 +32,7 @@ public final class RemoteUser implements Encodable {
         this.messengerId = messengerId;
         this.partyId = partyId;
         this.guildId = guildId;
+        this.expeditionId = expeditionId;
         this.townPortal = townPortal;
     }
 
@@ -92,6 +96,14 @@ public final class RemoteUser implements Encodable {
         this.guildId = guildId;
     }
 
+    public int getExpeditionId() {
+        return expeditionId;
+    }
+
+    public void setExpeditionId(int expeditionId) {
+        this.expeditionId = expeditionId;
+    }
+
     public RemoteTownPortal getTownPortal() {
         return townPortal != null ? townPortal : RemoteTownPortal.EMPTY;
     }
@@ -129,6 +141,7 @@ public final class RemoteUser implements Encodable {
         outPacket.encodeInt(messengerId);
         outPacket.encodeInt(partyId);
         outPacket.encodeInt(guildId);
+        outPacket.encodeInt(expeditionId);
         outPacket.encodeByte(townPortal != null);
         if (townPortal != null) {
             townPortal.encode(outPacket);
@@ -146,6 +159,7 @@ public final class RemoteUser implements Encodable {
         final int messengerId = inPacket.decodeInt();
         final int partyId = inPacket.decodeInt();
         final int guildId = inPacket.decodeInt();
+        final int expeditionId = inPacket.decodeInt();
         final RemoteTownPortal townPortal = inPacket.decodeBoolean() ? RemoteTownPortal.decode(inPacket) : null;
         return new RemoteUser(
                 accountId,
@@ -158,6 +172,7 @@ public final class RemoteUser implements Encodable {
                 messengerId,
                 partyId,
                 guildId,
+                expeditionId,
                 townPortal
         );
     }
@@ -174,6 +189,7 @@ public final class RemoteUser implements Encodable {
                 user.getMessengerId(),
                 user.getCharacterData().getPartyId(),
                 user.getCharacterData().getGuildId(),
+                user.getCharacterData().getExpeditionId(),
                 user.getTownPortal() != null ? RemoteTownPortal.from(user.getTownPortal()) : null
         );
     }

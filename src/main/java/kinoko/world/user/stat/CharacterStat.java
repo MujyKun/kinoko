@@ -33,7 +33,7 @@ public final class CharacterStat implements Encodable {
     private int maxMp;
     private short ap;
     private ExtendSp sp;
-    private int exp;
+    private long exp;
     private short pop;
     private int posMap;
     private byte portal;
@@ -50,7 +50,7 @@ public final class CharacterStat implements Encodable {
                          short level, short job, short subJob,
                          short baseStr, short baseDex, short baseInt, short baseLuk,
                          int hp, int maxHp, int mp, int maxMp, short ap,
-                         int exp, short pop, int posMap, byte portal,
+                         long exp, short pop, int posMap, byte portal,
                          long petSn1, long petSn2, long petSn3, AdminLevel adminLevel) {
         this.id = id;
         this.name = name;
@@ -252,11 +252,11 @@ public final class CharacterStat implements Encodable {
         this.sp = sp;
     }
 
-    public int getExp() {
+    public long getExp() {
         return exp;
     }
 
-    public void setExp(int exp) {
+    public void setExp(long exp) {
         this.exp = exp;
     }
 
@@ -405,18 +405,18 @@ public final class CharacterStat implements Encodable {
         return statMap;
     }
 
-    public Map<Stat, Object> addExp(int delta, int totalInt) {
+    public Map<Stat, Object> addExp(long delta, int totalInt) {
         final Map<Stat, Object> statMap = new EnumMap<>(Stat.class);
         if (getLevel() >= GameConstants.getLevelMax(job)) {
             return statMap;
         }
-        long newExp = ((long) getExp()) + delta;
-        while (newExp >= GameConstants.getNextLevelExp(getLevel())) {
+        long newExp = getExp() + delta;
+        while (getLevel() < GameConstants.getLevelMax(job) && newExp >= GameConstants.getNextLevelExp(getLevel())) {
             newExp -= GameConstants.getNextLevelExp(getLevel());
             statMap.putAll(levelUp(totalInt));
         }
-        setExp((int) newExp);
-        statMap.put(Stat.EXP, (int) newExp);
+        setExp(newExp);
+        statMap.put(Stat.EXP, newExp);
         return statMap;
     }
 
@@ -427,7 +427,7 @@ public final class CharacterStat implements Encodable {
         }
         // Update level
         setLevel((short) (getLevel() + 1));
-        statMap.put(Stat.LEVEL, (byte) getLevel());
+        statMap.put(Stat.LEVEL, getLevel());
         // Update max hp
         final int incHp = StatConstants.getIncHp(getJob()) + Util.getRandom(StatConstants.INC_HP_VARIANCE);
         setMaxHp(Math.min(getMaxHp() + incHp, GameConstants.HP_MAX));
@@ -491,7 +491,7 @@ public final class CharacterStat implements Encodable {
         outPacket.encodeLong(petSn2);
         outPacket.encodeLong(petSn3);
 
-        outPacket.encodeByte(level); // nLevel
+        outPacket.encodeShort(level); // nLevel
         outPacket.encodeShort(job); // nJob
         outPacket.encodeShort(baseStr); // nSTR
         outPacket.encodeShort(baseDex); // nDEX

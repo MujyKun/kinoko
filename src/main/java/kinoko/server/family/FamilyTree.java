@@ -576,7 +576,7 @@ public final class FamilyTree {
         out.encodeInt(member.getCharacterId());
         out.encodeInt(member.getParentId() == null ? 0 : member.getParentId());
         out.encodeShort(member.getJob());
-        out.encodeByte(member.getLevel());
+        out.encodeShort(member.getLevel());
         out.encodeByte(member.isOnline() ? 1 : 0);
         out.encodeInt(member.getReputation());
         out.encodeInt(member.getTotalReputation());

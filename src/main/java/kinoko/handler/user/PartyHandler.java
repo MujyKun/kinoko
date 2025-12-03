@@ -2,6 +2,7 @@ package kinoko.handler.user;
 
 import kinoko.handler.Handler;
 import kinoko.packet.world.PartyPacket;
+import kinoko.server.expedition.ExpeditionRequest;
 import kinoko.server.header.InHeader;
 import kinoko.server.packet.InPacket;
 import kinoko.server.party.PartyRequest;
@@ -33,8 +34,18 @@ public final class PartyHandler {
                     user.write(PartyPacket.of(PartyResultType.WithdrawParty_NotJoined));
                     return;
                 }
+
                 inPacket.decodeByte(); // hardcoded 0
-                user.getConnectedServer().submitPartyRequest(user, PartyRequest.withdrawParty());
+
+                if (user.hasExpedition()) {
+                    // the user would have been prompted that their exped would end if they left pt and clicked yes.
+                    // will kick user from PT when withdrawing from expedition.
+                    user.getConnectedServer().submitExpeditionRequest(user, ExpeditionRequest.withdrawExpedition());
+                    user.setExpeditionInfo(null);
+                }
+                else {
+                    user.getConnectedServer().submitPartyRequest(user, PartyRequest.withdrawParty());
+                }
             }
             case JoinParty -> {
                 // CWvsContext::OnPartyResult

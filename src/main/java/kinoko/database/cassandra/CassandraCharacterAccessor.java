@@ -102,6 +102,7 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
         cd.setFriendMax(row.getInt(CharacterTable.FRIEND_MAX));
         cd.setPartyId(row.getInt(CharacterTable.PARTY_ID));
         cd.setGuildId(row.getInt(CharacterTable.GUILD_ID));
+        cd.setExpeditionId(row.getInt(CharacterTable.EXPEDITION_ID));
         cd.setCreationTime(row.getInstant(CharacterTable.CREATION_TIME));
         cd.setMaxLevelTime(row.getInstant(CharacterTable.MAX_LEVEL_TIME));
         return cd;
@@ -250,6 +251,7 @@ public final class CassandraCharacterAccessor extends CassandraAccessor implemen
                         .setColumn(CharacterTable.FRIEND_MAX, literal(characterData.getFriendMax()))
                         .setColumn(CharacterTable.PARTY_ID, literal(characterData.getPartyId()))
                         .setColumn(CharacterTable.GUILD_ID, literal(characterData.getGuildId()))
+                        .setColumn(CharacterTable.EXPEDITION_ID, literal(characterData.getExpeditionId()))
                         .setColumn(CharacterTable.CREATION_TIME, literal(characterData.getCreationTime()))
                         .setColumn(CharacterTable.MAX_LEVEL_TIME, literal(characterData.getMaxLevelTime()))
                         .whereColumn(CharacterTable.CHARACTER_ID).isEqualTo(literal(characterData.getCharacterId()))
