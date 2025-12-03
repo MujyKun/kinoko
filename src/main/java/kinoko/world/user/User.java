@@ -287,7 +287,7 @@ public final class User extends Life {
     }
 
     public boolean hasExpedition() {
-        if (expeditionInfo == null) {
+        if (expeditionInfo == null || expeditionInfo == ExpeditionInfo.EMPTY) {
             return false;
         }
         return getExpeditionId() != 0;

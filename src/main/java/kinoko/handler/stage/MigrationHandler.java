@@ -47,6 +47,7 @@ import kinoko.world.user.stat.CharacterTemporaryStat;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.rmi.Remote;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -228,24 +229,26 @@ public final class MigrationHandler {
                 // Load expedition
                 // Set user's expedition info if they have one
                 int expeditionId = characterData.getExpeditionId(); // from DB
-                if (expeditionId != 0 && user.getExpeditionInfo() == ExpeditionInfo.EMPTY){
-                    Optional<Expedition> expedOpt = centralServerNode.getExpeditionById(expeditionId);
-                    if (expedOpt.isPresent()){
-                        Expedition exped = expedOpt.get();
-                        // little cheat to get remote user and making sure they belong in exped at same time.
-                        Optional<RemoteUser> remoteUserOpt = exped.getMember(user.getCharacterId());
-                        if (remoteUserOpt.isPresent()) {
-                            RemoteUser remoteUser = remoteUserOpt.get();
-                            ExpeditionInfo expedInfo = exped.createInfo(remoteUser);
-                            user.setExpeditionInfo(expedInfo);
-                            user.write(ExpeditionPacket.loadExpedDone(exped));
-                        }
-                        else {
+                if (expeditionId != 0 && !user.hasExpedition()){
+                    Optional<RemoteUser> remoteUserOpt = centralServerNode.getRemoteUserByCharacterId(user.getCharacterId());
+                    if (remoteUserOpt.isPresent()) {
+                        RemoteUser remoteUser = remoteUserOpt.get();
+                        Optional<Expedition> expedOpt = centralServerNode.getExpeditionById(expeditionId);
+                        if (expedOpt.isPresent()) {
+                            Expedition exped = expedOpt.get();
+                            if (exped.hasMember(user.getCharacterId())) {
+                                ExpeditionInfo expedInfo = exped.createInfo(remoteUser);
+                                user.setExpeditionInfo(expedInfo);
+                                user.write(ExpeditionPacket.loadExpedDone(exped));
+                            } else {
+                                characterData.setExpeditionId(0);
+                                remoteUser.setExpeditionId(0);
+                            }
+                        } else {
                             characterData.setExpeditionId(0);
+                            remoteUser.setExpeditionId(0);
+
                         }
-                    }
-                    else {
-                        characterData.setExpeditionId(0);
                     }
                 }
 

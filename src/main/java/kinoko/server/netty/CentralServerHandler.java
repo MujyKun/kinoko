@@ -1250,7 +1250,6 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
                         expedition.addMember(remoteUser);
 
                         // Broadcast join packet to exped
-                        final OutPacket outPacket = ExpeditionPacket.loadExpedDone(expedition);
                         forEachExpedPartyMember(expedition, (member, node) -> {
                             if (member.getCharacterId() == remoteUser.getCharacterId()) {
                                 member.setPartyId(partyId);
@@ -1260,7 +1259,9 @@ public final class CentralServerHandler extends SimpleChannelInboundHandler<InPa
                                 node.write(CentralPacket.userPacketReceive(member.getCharacterId(), ExpeditionPacket.joinExpedDone(expedition, remoteUser)));
                             }
 
-                            node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.joinPartyDone(party, remoteUser)));
+                            if (member.getPartyId() == remoteUser.getPartyId()) {
+                                node.write(CentralPacket.partyResult(member.getCharacterId(), party.createInfo(member), PartyPacket.joinPartyDone(party, remoteUser)));
+                            }
                             node.write(CentralPacket.expeditionResult(member.getCharacterId(), expedition.createInfo(member), ExpeditionPacket.loadExpedDone(expedition)));
                         });
                     }
